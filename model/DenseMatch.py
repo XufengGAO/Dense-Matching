@@ -54,16 +54,14 @@ class Model(nn.Module):
                                       619, 651, 683, 715, 747, 779, 811, 843, 907, 971])
 
         # 2. Miscellaneous
-        self.hsfilter = geometry.gaussian2d(7).unsqueeze(0).unsqueeze(0).cuda()
         self.relu = nn.ReLU(inplace=True)
 
-        # set None first
-
-        self.hpgeometry, self.hpos, self.feat_height, self.feat_width = None, None, None, None
-
-        self.classmap = args.classmap
+        # set geometry
+        self.img_side, self.feat_h, self.feat_w = None, None, None
         self.channels = [self.in_channels[i] for i in self.layers]
-        
+        self.jsz = self.jsz[self.layers[0]]
+        self.rfsz = self.rfsz[self.layers[0]]
+        self.set_geometry = False
 
         # 3. Custom modules
         # dynamic feature selection
@@ -97,7 +95,7 @@ class Model(nn.Module):
         else:
             self.corr_projector = None
 
-
+        
 
     def init_projector(self, layer):
         if isinstance(layer, nn.Conv2d):
@@ -111,8 +109,10 @@ class Model(nn.Module):
             if layer.bias is not None:
                 layer.bias.data.zero_()
 
+    def get_geo_info(self):
+        return self.rfsz, self.jsz, self.feat_h, self.feat_w, self.img_side
 
-    def forward(self, imgs, masks, bsz):
+    def forward(self, imgs, bsz):
         r"""Forward pass"""
         # feature extraction
         b = imgs.size()[0]  # src + trg
@@ -123,10 +123,10 @@ class Model(nn.Module):
             src_feat = [F.interpolate(src_f[i], size=base_feat_size, mode='bilinear', align_corners=False) for i in range(len(self.layers))]
             trg_feat = [F.interpolate(trg_f[i], size=base_feat_size, mode='bilinear', align_corners=False) for i in range(len(self.layers))]
 
-            if self.hpgeometry is None:
-                self.feat_height, self.feat_width = int(base_feat_size[0]), int(base_feat_size[1])
-                self.hpgeometry = geometry.receptive_fields(self.rfsz[self.layers[0]], self.jsz[self.layers[0]], self.feat_height, self.feat_width)
-                self.hpos = geometry.center(self.hpgeometry)
+            if not self.set_geometry:
+                self.feat_h, self.feat_w = int(base_feat_size[0]), int(base_feat_size[1])
+                self.set_geometry = True
+                self.img_side = imgs.size()[2:][::-1] # (w,h)
 
         # dynamic feature selection
         if self.learner is not None:

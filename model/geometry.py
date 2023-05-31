@@ -1,9 +1,5 @@
 """Provides functions that manipulate boxes and points"""
-
 import torch
-
-from . import util
-
 
 def center(box):
     r"""Calculates centers, (x, y), of box (N, 4)"""
@@ -90,8 +86,6 @@ def predict_kps(box, src_kps, n_pts, confidence_ts):
     # print(src_box.size())
     for ct, kpss, np in zip(confidence_ts, src_kps, n_pts):
 
-        # print(ct.size(), kpss.size(), np)
-        
         # 1. Prepare geometries & argmax target indices
         kp = kpss.narrow_copy(1, 0, np) # cut the real kpss
         _, trg_argmax_idx = torch.max(ct, dim=1)
@@ -141,32 +135,6 @@ def neighbours(box, kps):
     del box_duplicate, kps_duplicate, xmin, ymin, xmax, ymax
 
     return nbr_onehot, n_neighbours
-
-def predict_test_kps(src_box, trg_box, src_kps, confidence_ts):
-    r"""Transfer keypoints by nearest-neighbour assignment"""
-    # confidence_ts = mutual_nn_filter(confidence_ts.unsqueeze(0)) # refined correleation matrix
-    # confidence_ts = confidence_ts.squeeze(0)
-    # 1. Prepare geometries & argmax target indices
-    _, trg_argmax_idx = torch.max(confidence_ts, dim=1)
-    src_geomet = src_box[:, :2].unsqueeze(0).repeat(len(src_kps.t()), 1, 1)
-    trg_geomet = trg_box[:, :2].unsqueeze(0).repeat(len(src_kps.t()), 1, 1)
-
-    # 2. Retrieve neighbouring source boxes that cover source key-points
-    src_nbr_onehot, n_neighbours = neighbours(src_box, src_kps)
-
-    # 3. Get displacements from source neighbouring box centers to each key-point
-    src_displacements = src_kps.t().unsqueeze(1).repeat(1, len(src_box), 1) - src_geomet
-    src_displacements = src_displacements * src_nbr_onehot.unsqueeze(2).repeat(1, 1, 2).float()
-
-    # 4. Transfer the neighbours based on given confidence tensor
-    vector_summator = torch.zeros_like(src_geomet)
-    src_idx = src_nbr_onehot.nonzero()
-    trg_idx = trg_argmax_idx.index_select(dim=0, index=src_idx[:, 1])
-    vector_summator[src_idx[:, 0], src_idx[:, 1]] = trg_geomet[src_idx[:, 0], trg_idx]
-    vector_summator += src_displacements
-    pred = (vector_summator.sum(dim=1) / n_neighbours.unsqueeze(1).repeat(1, 2).float())
-
-    return pred.t()
 
 def gaussian2d(side=7):
     r"""Returns 2-dimensional gaussian filter"""

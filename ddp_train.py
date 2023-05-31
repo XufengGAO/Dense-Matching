@@ -3,6 +3,7 @@ import os
 import torch
 import time
 from model import DenseMatch, geometry
+from model.postprocess import PostProcess
 import tools.utils as utils
 from tools.utils import AverageMeter, ProgressMeter
 from tools.builder import init_distributed_mode, build_dataloader, build_optimizer, \
@@ -24,7 +25,6 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     
     # 2. Model status
     model.module.backbone.eval()
-    model.module.learner.train()
     optimizer.zero_grad()
 
     iters_per_epoch = len(dataloader)
@@ -47,9 +47,9 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         # 5. Calculate loss
         if args.criterion == "strong_ce":
             with torch.no_grad():
-                if evaluator.hpos is None and evaluator.hpgeometry is None:
-                    evaluator.hpos = model.module.hpos
-                    evaluator.hpgeometry = model.module.hpgeometry
+                if evaluator.rf_center is None and evaluator.rf is None:
+                    rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
+                    evaluator.set_geo(rfsz, jsz, feat_h, feat_w)
                 # return dict results                
                 eval_result = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
                                                  corr.detach().clone(), data['pckthres'], pck_only=False)
@@ -121,37 +121,28 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
                     loss = (weak_lambda * task_loss).sum()
 
                 loss_meter.update(loss.item(), bsz)
-                del loss
 
-                # 4. collect results
-                batch_pck = 0
-                src_size = (src["feats"].size()[0], src["feats"].size()[1])
-                trg_size = (trg["feats"].size()[0], trg["feats"].size()[1])
-                votes, _, _ = model.module.calculate_votes(
-                    src["feats"], trg["feats"], args.epsilon, args.exp2, src_size, trg_size, src["weights"], trg["weights"], False, bsz)
-                votes_geo, _, _ = model.module.calculate_votesGeo(
-                    votes, None, None, src["imsize"], trg["imsize"], src["box"], trg["box"])
-                prd_kps = geometry.predict_kps(
-                    src["box"], trg["box"], data["src_kps"],
-                    data["n_pts"], votes_geo,
-                )  # predicted points
-                eval_result = evaluator.eval_kps_transfer(
-                    prd_kps, data, args.criterion, pck_only=True
-                )  # return dict results
-                # prd_kps_list[key] = prd_kps
-                batch_pck = utils.mean(eval_result["pck"])
-                del votes, votes_geo, eval_result, prd_kps
+                # 4. Calculate PCK
+                ##TODO, optmatch should be added later, Post-processing
+                with torch.no_grad():
+                    geometric_scores = torch.stack([PostProcessModule.rhm(c.clone().detach()) for c in corr], dim=0)
+                corr *= geometric_scores
+
+                pck = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
+                                            corr.detach().clone(), data['pckthres'], pck_only=True)
+
+                batch_pck = utils.mean(pck)
 
                 pck_meter.update(batch_pck, bsz)
    
-                del batch_pck, data, src, trg
+                del batch_pck, data
 
     loss_meter = AverageMeter('loss', ':4.2f')
     pck_meter = AverageMeter('pck', ':4.2f')
     progress_list = [loss_meter, pck_meter]
     progress = ProgressMeter(
         len(dataloader) + (args.distributed and (len(dataloader.sampler) * args.world_size < len(dataloader.dataset))), 
-        progress_list, prefix="Test[{}]: ".format(epoch))
+        progress_list, prefix="Val[{}]: ".format(epoch))
 
     # switch to evaluate mode
     model.module.backbone.eval()
@@ -283,7 +274,7 @@ def main(args):
 
     # 6. Evaluator, Wandb
     global evaluator
-    evaluator = Evaluator(criterion=args.criterion, alpha=args.alpha)
+    evaluator = Evaluator(criterion=args.criterion, device=device, alpha=args.alpha)
     build_wandb(args, rank)
 
     # 7. Start training
@@ -294,6 +285,8 @@ def main(args):
         weak_lambda = torch.FloatTensor(list(map(float, re.findall(r"[-+]?(?:\d*\.*\d+)", args.weak_lambda)))).cuda()
         weak_lambda.requires_grad = False
 
+    global PostProcessModule
+    PostProcessModule = None
 
     for epoch in range(args.start_epoch, args.epochs):
         train_loader.sampler.set_epoch(epoch)
@@ -303,6 +296,11 @@ def main(args):
         trn_loss = train(args, model, criterion, train_loader, optimizer, epoch)
         log_benchmark["trn_loss"] = trn_loss
         end_train_time = (time.time()-start_time)/60
+
+        # Create a PostProcessModule:
+        if PostProcessModule is None:
+            rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
+            PostProcessModule = PostProcess(rfsz, jsz, feat_h, feat_w, device, img_side)
 
         # validation
         start_time = time.time()

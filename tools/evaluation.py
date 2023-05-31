@@ -9,20 +9,25 @@ import torch.nn.functional as F
 class Evaluator:
     r"""Computes evaluation metrics of PCK, LT-ACC, IoU"""
 
-    def __init__(self, criterion, alpha=0.1):
+    def __init__(self, criterion, device, alpha=0.1):
         self.alpha = alpha
-        self.hpos = None
-        self.hpgeometry = None
+        self.rf_center = None
+        self.rf = None
         self.supervision = criterion
-        self.hsfilter = geometry.gaussian2d(7).unsqueeze(0).unsqueeze(0).cuda()
+        self.device = device
+
+    def set_geo(self, rfsz, jsz, feat_h, feat_w):
+        self.rf = geometry.receptive_fields(rfsz, jsz, feat_h, feat_w).to(self.device)
+        self.rf_center = geometry.center(self.rf)
 
     def evaluate(self, src_kps, trg_kps, n_pts, corr, pckthres, pck_only):
-        self.src_kpidx = match_idx(src_kps, n_pts, self.hpos)
-        self.trg_kpidx = match_idx(trg_kps, n_pts, self.hpos)
-        prd_kps = geometry.predict_kps(self.hpgeometry, src_kps, n_pts, corr)
-
-        easy_match = {'src': [], 'trg': [], 'dist': []}
-        hard_match = {'src': [], 'trg': []}
+        if not pck_only:
+            src_kpidx = match_idx(src_kps, n_pts, self.rf_center)
+            trg_kpidx = match_idx(trg_kps, n_pts, self.rf_center)
+            easy_match = {'src': [], 'trg': [], 'dist': []}
+            hard_match = {'src': [], 'trg': []}
+        
+        prd_kps = geometry.predict_kps(self.rf, src_kps, n_pts, corr)
 
         pck = []
         pck_ids = torch.zeros((prd_kps.size()[0], prd_kps.size()[-1]), dtype=torch.uint8) # Bx40, default incorrect points
@@ -34,21 +39,25 @@ class Evaluator:
                 easy_match['dist'].append(correct_dist)
                 # for each keypoint, we find its nearest neighbour of center of receptive field
                 # then kpidx is the id of hyperpixel
-                easy_match['src'].append(self.src_kpidx[idx][:npt][correct_ids])
-                easy_match['trg'].append(self.trg_kpidx[idx][:npt][correct_ids])
-                hard_match['src'].append(self.src_kpidx[idx][:npt][incorrect_ids])
-                hard_match['trg'].append(self.trg_kpidx[idx][:npt][incorrect_ids])
+                easy_match['src'].append(src_kpidx[idx][:npt][correct_ids])
+                easy_match['trg'].append(trg_kpidx[idx][:npt][correct_ids])
+                hard_match['src'].append(src_kpidx[idx][:npt][incorrect_ids])
+                hard_match['trg'].append(trg_kpidx[idx][:npt][incorrect_ids])
+            
             pck.append(int(ncorrt)/int(npt))
-            # print(int(ncorrt)/int(npt))
+     
             del correct_dist, correct_ids, incorrect_ids, ncorrt
-        
-        eval_result = {'easy_match': easy_match,
-                       'hard_match': hard_match,
-                       'pck': pck, 
-                       'pck_ids': pck_ids}
-        del pck_ids
-        
-        return eval_result
+
+        if pck_only:
+            return pck
+        else:
+            eval_result = {'easy_match': easy_match,
+                        'hard_match': hard_match,
+                        'pck': pck, 
+                        'pck_ids': pck_ids}
+            
+            
+            return eval_result
 
     def classify_prd(self, prd_kps, trg_kps, pckthres):
         r"""Compute the number of correctly transferred key-points"""
@@ -67,30 +76,6 @@ class Evaluator:
 
         return correct_dist, correct_ids, incorrect_ids, int(torch.sum(correct_pts))
     
-    def rhm(self, corr, src_imsize, trg_imsize):
-        with torch.no_grad():
-            ncells = 8192
-            geometric_scores = []
-            nbins_x, nbins_y, hs_cellsize = rhm_map.build_hspace(src_imsize, trg_imsize, ncells)
-            bin_ids = rhm_map.hspace_bin_ids(src_imsize, self.hpgeometry, self.hpgeometry, hs_cellsize, nbins_x)
-            hspace = self.hpgeometry.new_zeros((corr.size()[1], nbins_y * nbins_x))
-
-            hbin_ids = bin_ids.add(torch.arange(0, corr.size()[1]).to(corr.device).
-                                mul(hspace.size(1)).unsqueeze(1).expand_as(bin_ids))
-            for cor in corr:
-                new_hspace = hspace.view(-1).index_add(0, hbin_ids.view(-1), cor.view(-1)).view_as(hspace)
-                new_hspace = torch.sum(new_hspace, dim=0).to(corr.device)
-
-                # Aggregate the voting results
-                new_hspace = F.conv2d(new_hspace.view(1, 1, nbins_y, nbins_x), self.hsfilter, padding=3).view(-1)
-
-                geometric_scores.append((torch.index_select(new_hspace, dim=0, index=bin_ids.view(-1)).view_as(cor)).unsqueeze(0))
-
-            geometric_scores = torch.cat(geometric_scores, dim=0)
-
-            corr *= geometric_scores
-        
-        return corr
 
 
 def find_knn(db_vectors, qr_vectors):
