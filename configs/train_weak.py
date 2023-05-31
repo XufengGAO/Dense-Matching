@@ -33,7 +33,7 @@ batch_size = 8
 optimizer = 'sgd'
 weight_decay = 0.0001
 momentum = 0.9
-
+scheduler = 'none'
 
 
 # Misc
