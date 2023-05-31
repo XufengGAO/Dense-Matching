@@ -4,7 +4,6 @@ from functools import reduce
 from operator import add
 import torch.nn.functional as F
 import torch
-from . import geometry
 from . import resnet
 import torch.nn as nn
 from .custom_modules import DynamicFeatureSelection

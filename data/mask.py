@@ -1,7 +1,6 @@
 r"""PF-PASCAL dataset"""
 import os
 
-import scipy.io as sio
 import pandas as pd
 import numpy as np
 import torch

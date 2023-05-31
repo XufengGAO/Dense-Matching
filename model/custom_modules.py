@@ -1,7 +1,6 @@
 r"""Implementation of Dynamic Layer Gating (DLG)"""
 import torch.nn as nn
 import torch
-import re
 import torch.optim as optim
 
 class DynamicFeatureSelection(nn.Module):
