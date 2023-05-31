@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 import time
-from model import DenseMatch, geometry
+from model import DenseMatch
 from model.postprocess import PostProcess
 import tools.utils as utils
 from tools.utils import AverageMeter, ProgressMeter
@@ -11,6 +11,7 @@ from tools.builder import init_distributed_mode, build_dataloader, build_optimiz
 from tools.logger import Logger
 from tools.evaluation import Evaluator
 import wandb
+from mmcv import Config
 import re
 import torch.backends.cudnn as cudnn
 from torch import distributed as dist
@@ -169,7 +170,6 @@ def build_wandb(args, rank):
     if args.use_wandb and rank == 0:
         wandb_name = "%.e_%s_%s_%s" % (
             args.lr,
-            args.loss_stage,
             args.criterion,
             args.optimizer,
         )
@@ -226,7 +226,7 @@ def main(args):
     device = torch.device("cuda:{}".format(local_rank))
     world_size = dist.get_world_size()
 
-    utils.fix_randseed(seed=(0))
+    utils.fix_randseed(seed=0)
     cudnn.benchmark = True
     # cudnn.deterministic = True
     
@@ -236,8 +236,15 @@ def main(args):
     # 3. Model
     assert args.backbone in ["resnet50", "resnet101"], "Unknown backbone"
     Logger.info(f">>>>>>>>>> Creating model:{args.backbone} + {args.pretrain} <<<<<<<<<<")
-    n_layers = {"resnet50": 17, "resnet101": 34, "fcn101": 34}
-    layers = list(range(n_layers[args.backbone]))
+
+    if args.layers:
+        layers = args.layers
+    else:
+        n_layers = {"resnet50": 17, "resnet101": 34, "fcn101": 34}
+        layers = list(range(n_layers[args.backbone]))
+    str_layer = ', '.join(str(i) for i in layers)
+    Logger.info(f'>>>>>>> Use {len(layers)} layers: {str_layer}.')
+
     #TODO: directly change here
     model = DenseMatch.Model(args, layers)
     model.cuda()
@@ -334,21 +341,24 @@ def main(args):
 if __name__ == "__main__":
     # Arguments parsing
     # fmt: off
-    parser = argparse.ArgumentParser(description="SCOT Training Script")
+    parser = argparse.ArgumentParser(description="Training Script")
     
+    parser.add_argument('--config', help='train config file path')
+
     # Data and model
     parser.add_argument('--datapath', type=str, default='./datasets') 
     parser.add_argument('--benchmark', type=str, default='pfpascal')
-    parser.add_argument('--backbone', type=str, default='resnet50')
-    parser.add_argument('--backbone_path', type=str, default='./backbone')
-    parser.add_argument('--pretrain', type=str, default='sup', choices=['sup', 'dino', 'denseCL'], help='supervised or self-supervised backbone')
-    parser.add_argument('--thres', type=str, default='auto', choices=['auto', 'img', 'bbox'])
     parser.add_argument('--alpha', type=float, default=0.1)
+    parser.add_argument('--thres', type=str, default='auto', choices=['auto', 'img', 'bbox'])
+    parser.add_argument('--output_image_size', type=str, default='(300)')
     
-
+    parser.add_argument('--backbone', type=str, default='resnet50')
+    parser.add_argument('--pretrain', type=str, default='imagenet', choices=['imagenet', 'dino', 'denseCL'], help='supervised or self-supervised backbone')
+    parser.add_argument('--backbone_path', type=str, default='./backbone')
+    
+    
     # Training parameters
     parser.add_argument('--gpu', type=str, default='0', help='GPU id')
-    parser.add_argument('--criterion', type=str, default='strong_ce', choices=['weak', 'strong_ce', 'flow'])
     parser.add_argument('--lr', type=float, default=0.01) 
     parser.add_argument('--lr_backbone', type=float, default=0.0) 
     parser.add_argument('--freeze_backbone', type= utils.boolean_string, nargs="?", default=True)
@@ -361,9 +371,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler", type=str, default="none", choices=['none', 'step', 'cycle', 'cosine'])
     parser.add_argument('--step_size', type=int, default=16, help='hyperparameters for step scheduler')
     parser.add_argument('--step_gamma', type=float, default=0.1, help='hyperparameters for step scheduler')
-    parser.add_argument('--loss_stage', type=str, default="sim", choices=['sim', 'sim_geo', 'votes', 'votes_geo'])
-    parser.add_argument('--output_image_size', type=str, default='(300)')
-
+    
 
     # Custom module
     parser.add_argument("--init_type", type= str, nargs="?", default='kaiming_norm')
@@ -392,6 +400,7 @@ if __name__ == "__main__":
 
 
     # Loss parameters
+    parser.add_argument('--criterion', type=str, default='strong_ce', choices=['weak', 'strong_ce', 'flow'])
     parser.add_argument('--weak_lambda', type=str, default='[1.0, 1.0]')
     parser.add_argument('--temp', type=float, default=0.05, help='softmax-temp for match loss')
     parser.add_argument("--collect_grad", type= utils.boolean_string, nargs="?", default=False)
@@ -404,18 +413,20 @@ if __name__ == "__main__":
     parser.add_argument("--local_rank", required=True, type=int, help='local rank for DistributedDataParallel')
     parser.add_argument('--dist_backend', default='nccl', type=str, help='distributed backend')
 
-    parser.add_argument("--eval_mode", type= utils.boolean_string, nargs="?", default=False, help='train or test model')
-
     
     args = parser.parse_args()
     
-    init_distributed_mode(args)
+    dist_dict = init_distributed_mode(args)
+    args.output_image_size = utils.parse_string(args.output_image_size)
+
+    if args.config:
+        args = Config.fromfile(args.config)
+        args.merge_from_dict(dist_dict)
 
     if args.use_negative:
         assert args.criterion == 'weak', "use_negative is only for weak loss"
 
     if args.use_wandb and args.run_id == '':
         args.run_id = wandb.util.generate_id()
-    args.output_image_size = utils.parse_string(args.output_image_size)
-
+    
     main(args)

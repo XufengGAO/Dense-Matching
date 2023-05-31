@@ -67,11 +67,6 @@ class Model(nn.Module):
         # dynamic feature selection
         self.learner = DynamicFeatureSelection(self.channels, len(self.layers), args.init_type, args.w_group, args.use_mp)
 
-        if args.w_group > 1:
-            self.corr_projector = torch.nn.Conv2d(args.w_group, 1, (1,1))
-        else:
-            self.corr_projector = None
-
         # Projectors
         # feature projection
         self.init_type = args.init_type
@@ -94,8 +89,6 @@ class Model(nn.Module):
             self.corr_projector.apply(self.init_projector)
         else:
             self.corr_projector = None
-
-        
 
     def init_projector(self, layer):
         if isinstance(layer, nn.Conv2d):

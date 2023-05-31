@@ -10,7 +10,7 @@ class Logger:
     def initialize(cls, args, training=True):
         if training:
             if args.logpath == "":
-                logpath = "%.e_%s_%s_bsz%d"%(args.lr, args.loss_stage, args.optimizer, args.batch_size)
+                logpath = "%.e_%s_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
                 
                 if args.optimizer == "sgd":
                     logpath = logpath + "_m%.2f"%(args.momentum)
@@ -58,17 +58,6 @@ class Logger:
     def info(cls, msg):
         r"""Writes message to .txt"""
         logging.info(msg)
-
-    @classmethod
-    def save_epoch(cls, model, epoch, val_pck):
-        torch.save(model.state_dict(), os.path.join(cls.logpath, 'eooch_%d.pt'%(epoch)))
-        cls.info('Epoch Model saved @%d w/ val. PCK: %5.4f on [%s]\n' % (epoch, val_pck, os.path.join(cls.logpath, 'eooch_%d.pt'%(epoch))))
-    
-    @classmethod
-    def save_model(cls, model, epoch, val_pck, best_val_pck):
-        torch.save(model.state_dict(), os.path.join(cls.logpath, 'best_model.pt'))
-        cls.info('Best Model saved @%d w/ val. PCK: %5.4f -> %5.4f on [%s]\n' % (epoch, best_val_pck, val_pck, os.path.join(cls.logpath, 'best_model.pt')))
-
 
 
 

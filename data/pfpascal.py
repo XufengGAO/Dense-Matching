@@ -12,7 +12,7 @@ from PIL import Image
 
 class PFPascalDataset(CorrespondenceDataset):
     r"""Inherits CorrespondenceDataset"""
-    def __init__(self, benchmark, datapath, thres, split, cam, output_image_size=(200,300), use_resize=False):
+    def __init__(self, benchmark, datapath, thres, split, cam, output_image_size=(256,256), use_resize=False):
         r"""PF-PASCAL dataset constructor"""
         super(PFPascalDataset, self).__init__(benchmark, datapath, thres, split, output_image_size, use_resize)
 
@@ -83,11 +83,12 @@ class PFPascalDataset(CorrespondenceDataset):
         else:
             sample['flip'] = 0
 
-        src_mask = self.get_mask(self.src_imnames, idx, sample['flip'])# only possible when cam exists
-        trg_mask = self.get_mask(self.trg_imnames, idx, sample['flip'])
-        if src_mask is not None and trg_mask is not None:
-            sample['src_mask'] = src_mask
-            sample['trg_mask'] = trg_mask
+        if self.cam:
+            src_mask = self.get_mask(self.src_imnames, idx, sample['flip'])# only possible when cam exists
+            trg_mask = self.get_mask(self.trg_imnames, idx, sample['flip'])
+            if src_mask is not None and trg_mask is not None:
+                sample['src_mask'] = src_mask
+                sample['trg_mask'] = trg_mask
 
         # resize all things
         if self.use_resize:

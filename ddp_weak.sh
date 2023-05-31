@@ -14,10 +14,13 @@ python3 -m torch.distributed.launch --master_port=${master_port} --nproc_per_nod
                                     ddp_train.py \
                                     --benchmark $benchmark \
                                     --backbone $backbone \
-                                    --weight_thres 0.10 \
-                                    --select_all 0.9 \
+                                    --pretrain 'imagenet' \
+                                    --alpha 0.1 \
                                     --criterion 'weak'\
-                                    --selfsup 'dino' \
+                                    --lr 0.0001 \
+                                    --freeze_backbone True \
+                                    --epochs 100 \
+                                    --batch_size 8 \
                                     --backbone_path './backbone/dino_resnet50.pth' \
                                     --temp 0.05 \
                                     --weak_lambda '[0.0, 0.0, 1.0]' \
@@ -25,11 +28,7 @@ python3 -m torch.distributed.launch --master_port=${master_port} --nproc_per_nod
                                     --entropy_func 'info_entropy'\
                                     --use_negative False \
                                     --match_norm_type 'l1' \
-                                    --alpha 0.1 \
-                                    --lr 0.0001 \
                                     --momentum 0.9 \
-                                    --epochs 100 \
-                                    --batch_size 8 \
                                     --optimizer 'sgd' \
                                     --exp2 0.5 \
                                     --use_wandb True \

@@ -44,7 +44,10 @@ def init_distributed_mode(args):
     )
     dist.barrier()
 
-    return args
+    dist_dict = {'rank':args.rank, 'world_size':args.world_size, 'local_rank':args.local_rank,\
+                 'dist_backend':args.dist_backend, 'distributed':args.distributed, 'dist_url':args.dist_url }
+
+    return dist_dict
 
 def build_dataloader(args, rank, world_size):
     num_workers = 16 if torch.cuda.is_available() else 8
