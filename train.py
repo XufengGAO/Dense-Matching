@@ -345,23 +345,33 @@ if __name__ == "__main__":
     
     parser.add_argument('--config', help='train config file path')
 
-    # Data and model
+    # Datasets
     parser.add_argument('--datapath', type=str, default='./datasets') 
     parser.add_argument('--benchmark', type=str, default='pfpascal')
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--thres', type=str, default='auto', choices=['auto', 'img', 'bbox'])
     parser.add_argument('--output_image_size', type=str, default='(300)')
-    
+    parser.add_argument('--classmap', type=int, default=0, help='class activation map: 0 for none, 1 for using CAM')
+    parser.add_argument('--cam', type=str, default='', help='activation map folder, empty for end2end computation')
+
+    # Models
     parser.add_argument('--backbone', type=str, default='resnet50')
     parser.add_argument('--pretrain', type=str, default='imagenet', choices=['imagenet', 'dino', 'denseCL'], help='supervised or self-supervised backbone')
     parser.add_argument('--backbone_path', type=str, default='./backbone')
+    parser.add_argument('--layers', type=str, default='')
+    parser.add_argument('--freeze_backbone', type= utils.boolean_string, nargs="?", default=True)
     
+    # Custom module
+    parser.add_argument("--init_type", type= str, nargs="?", default='kaiming_norm')
+    parser.add_argument('--w_group', type=int, default=1)
+    parser.add_argument('--use_mp', type= utils.boolean_string, nargs="?", default=True)
+    parser.add_argument('--embed_dim', type=int, default=256, help='dimension of projection')
+    parser.add_argument('--use_feat_project', type= utils.boolean_string, nargs="?", default=False)
     
     # Training parameters
-    parser.add_argument('--gpu', type=str, default='0', help='GPU id')
+    # parser.add_argument('--gpu', type=str, default='0', help='GPU id')
     parser.add_argument('--lr', type=float, default=0.01) 
     parser.add_argument('--lr_backbone', type=float, default=0.0) 
-    parser.add_argument('--freeze_backbone', type= utils.boolean_string, nargs="?", default=True)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--start_epoch', type=int, default=0)
     parser.add_argument('--batch_size', type=int, default=4)
@@ -371,15 +381,6 @@ if __name__ == "__main__":
     parser.add_argument("--scheduler", type=str, default="none", choices=['none', 'step', 'cycle', 'cosine'])
     parser.add_argument('--step_size', type=int, default=16, help='hyperparameters for step scheduler')
     parser.add_argument('--step_gamma', type=float, default=0.1, help='hyperparameters for step scheduler')
-    
-
-    # Custom module
-    parser.add_argument("--init_type", type= str, nargs="?", default='kaiming_norm')
-    parser.add_argument('--w_group', type=int, default=1)
-    parser.add_argument('--use_mp', type= utils.boolean_string, nargs="?", default=True)
-    parser.add_argument('--embed_dim', type=int, default=256, help='dimension of projection')
-    parser.add_argument('--use_feat_project', type= utils.boolean_string, nargs="?", default=False)
-    
 
     # Misc
     parser.add_argument("--use_wandb", type= utils.boolean_string, nargs="?", default=False)
@@ -389,13 +390,12 @@ if __name__ == "__main__":
     parser.add_argument('--wandb_name', type=str, default='', help='wandb project name')
 
 
-    # Algorithm parameters
-    parser.add_argument('--sim', type=str, default='OTGeo', help='Similarity type: OT, OTGeo, cos, cosGeo')
-    parser.add_argument('--exp1', type=float, default=1.0, help='exponential factor on initial cosine cost')
-    parser.add_argument('--exp2', type=float, default=1.0, help='exponential factor on final OT scores')
-    parser.add_argument('--epsilon', type=float, default=0.05, help='epsilon for Sinkhorn Regularization')
-    parser.add_argument('--classmap', type=int, default=0, help='class activation map: 0 for none, 1 for using CAM')
-    parser.add_argument('--cam', type=str, default='', help='activation map folder, empty for end2end computation')
+    # SCOT algorithm parameters
+    # parser.add_argument('--sim', type=str, default='OTGeo', help='Similarity type: OT, OTGeo, cos, cosGeo')
+    # parser.add_argument('--exp1', type=float, default=1.0, help='exponential factor on initial cosine cost')
+    # parser.add_argument('--exp2', type=float, default=1.0, help='exponential factor on final OT scores')
+    # parser.add_argument('--epsilon', type=float, default=0.05, help='epsilon for Sinkhorn Regularization')
+
     # default is the value that the attribute gets when the argument is absent. const is the value it gets when given.
 
 
@@ -420,6 +420,7 @@ if __name__ == "__main__":
     args.output_image_size = utils.parse_string(args.output_image_size)
 
     if args.config:
+        dist_dict['config'] = args.config
         args = Config.fromfile(args.config)
         args.merge_from_dict(dist_dict)
 

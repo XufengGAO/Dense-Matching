@@ -48,10 +48,11 @@ class Logger:
 #         cls.tbd_writer = SummaryWriter(os.path.join(cls.logpath, 'tbd/runs'))
         
         # Log arguments
-        logging.info('\n+=========== Arguments ============+')
-        for arg_key in args.__dict__:
-            logging.info('| %20s: %-24s |' % (arg_key, str(args.__dict__[arg_key])))
-        logging.info('+================================================+\n')
+        # logging.info('\n+=========== Arguments ============+')
+        # for arg_key in args.__dict__:
+        #     logging.info('| %20s: %-24s |' % (arg_key, str(args.__dict__[arg_key])))
+        # logging.info('+================================================+\n')
+        args.dump(os.path.join(cls.logpath, os.path.basename(args.config)))
 
     @classmethod
     def info(cls, msg):

@@ -4,6 +4,7 @@
 datapath = './datasets'
 benchmark = "pfpascal"
 alpha = 0.1
+thres = 'auto'
 output_image_size = (256, 256)
 cam = ''
 classmap = 0
@@ -24,9 +25,9 @@ use_mp = True # matrix_product
 embed_dim = 256
 use_feat_project = False
 
-
 # Training
 lr = 0.001
+lr_backbone = 0.0
 epochs = 100
 start_epoch = 0
 batch_size = 8 
@@ -35,13 +36,12 @@ weight_decay = 0.0001
 momentum = 0.9
 scheduler = 'none'
 
-
 # Misc
 use_wandb = True
-wandb_name = 'ddp_scot'
-run_id = ''
 logpath = ''
-
+resume = ''
+run_id = ''
+wandb_name = 'ddp_scot'
 
 # Loss
 criterion = 'strong_ce'
