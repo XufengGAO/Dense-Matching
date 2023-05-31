@@ -1,10 +1,7 @@
-"""For quantitative evaluation of DHPF"""
-from skimage import draw
-import numpy as np
+"""For quantitative evaluation"""
 import torch
 from . import utils
-from model import geometry, rhm_map
-import torch.nn.functional as F
+from model import geometry
 
 class Evaluator:
     r"""Computes evaluation metrics of PCK, LT-ACC, IoU"""

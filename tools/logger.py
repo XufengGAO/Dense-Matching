@@ -1,7 +1,6 @@
 r"""Logging"""
 import logging
 import os
-import torch
 from torch import distributed as dist
 
 class Logger:
