@@ -9,7 +9,7 @@ class Logger:
     def initialize(cls, args, training=True):
         if training:
             if args.logpath == "":
-                logpath = "%.e_%s_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
+                logpath = "%.e_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
                 
                 if args.optimizer == "sgd":
                     logpath = logpath + "_m%.2f"%(args.momentum)
