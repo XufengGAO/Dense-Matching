@@ -44,7 +44,7 @@ logpath = ''
 
 
 # Loss
-criterion = 'weak'
+criterion = 'strong_ce'
 weak_lambda = '[1.0, 0.0]'
 temp = 0.05 
 collect_grad = False
