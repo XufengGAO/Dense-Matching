@@ -1,7 +1,7 @@
 import math
 import torch
 import torch.nn.functional as F
-import geometry
+from . import geometry
 
 
 class PostProcess:
