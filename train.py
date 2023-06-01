@@ -45,12 +45,13 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         # 4. Compute output
         src_feat, trg_feat, corr = model(imgs, bsz)
 
+        with torch.no_grad():
+            if evaluator.rf_center is None and evaluator.rf is None:
+                rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
+                evaluator.set_geo(rfsz, jsz, feat_h, feat_w)
         # 5. Calculate loss
         if args.criterion == "strong_ce":
             with torch.no_grad():
-                if evaluator.rf_center is None and evaluator.rf is None:
-                    rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
-                    evaluator.set_geo(rfsz, jsz, feat_h, feat_w)
                 # return dict results                
                 eval_result = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
                                                  corr.detach().clone(), data['pckthres'], pck_only=False)
