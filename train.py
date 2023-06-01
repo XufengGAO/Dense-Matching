@@ -143,7 +143,7 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
     progress_list = [loss_meter, pck_meter]
     progress = ProgressMeter(
         len(dataloader) + (args.distributed and (len(dataloader.sampler) * args.world_size < len(dataloader.dataset))), 
-        progress_list, prefix="Val[{}]: ".format(epoch))
+        progress_list, prefix="Val[{}]".format(epoch))
 
     # switch to evaluate mode
     model.module.backbone.eval()
@@ -322,7 +322,7 @@ def main(args):
         if val_pck > max_pck and rank == 0:
             # Logger.save_model(model.module, epoch, val_pck, max_pck)
             # save_checkpoint(args, epoch, model, max_pck, optimizer, lr_scheduler)
-            Logger.info('Best Model saved @%d w/ val. PCK: %5.4f -> %5.4f on [%s]\n' % (epoch, max_pck, val_pck, os.path.join(args.logpath, f'ckpt_epoch_{epoch}.pth')))
+            Logger.info('Best Model saved @%d w/ val. PCK: %5.4f -> %5.4f on [%s]' % (epoch, max_pck, val_pck, os.path.join(args.logpath, f'ckpt_epoch_{epoch}.pth')))
             max_pck = val_pck
 
         if args.use_wandb and rank == 0:
@@ -330,7 +330,7 @@ def main(args):
             wandb.log(log_benchmark)
             
         time_message = (
-            ">>>>> Train/Eval %d epochs took:%4.3f + %4.3f = %4.3f"%(epoch + 1, end_train_time, end_val_time, end_train_time+end_val_time)+" minutes"
+            ">>>>> Train/Eval %d epochs took:%4.3f + %4.3f = %4.3f"%(epoch + 1, end_train_time, end_val_time, end_train_time+end_val_time)+" minutes\n"
         )
         Logger.info(time_message)
         if epoch%2 == 0:
