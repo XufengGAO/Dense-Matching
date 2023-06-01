@@ -11,9 +11,11 @@ from contextlib import nullcontext
 
 class Model(nn.Module):
     r"""SCOT framework"""
-    def __init__(self, args, layers):
+    def __init__(self, args, layers, freeze=True):
         r"""Constructor for SCOT framework"""
         super(Model, self).__init__()
+
+        self.freeze = freeze
 
         # 1. Backbone
         if args.backbone == 'resnet50':
@@ -109,12 +111,12 @@ class Model(nn.Module):
         r"""Forward pass"""
         # feature extraction
         b = imgs.size()[0]  # src + trg
-        with torch.no_grad():
+        with torch.no_grad() if self.freeze else nullcontext():
             feats, feat_map, fc = self.extract_feats(imgs, return_fc=False)
             src_f, trg_f = [f[0:b//2] for f in feats], [f[b//2:] for f in feats]
             base_feat_size = tuple(feats[0].size()[2:])
-            src_feat = [F.interpolate(src_f[i], size=base_feat_size, mode='bilinear', align_corners=False) for i in range(len(self.layers))]
-            trg_feat = [F.interpolate(trg_f[i], size=base_feat_size, mode='bilinear', align_corners=False) for i in range(len(self.layers))]
+            src_feat = [F.interpolate(src_f[i], size=base_feat_size, mode='bilinear', align_corners=True) for i in range(len(self.layers))]
+            trg_feat = [F.interpolate(trg_f[i], size=base_feat_size, mode='bilinear', align_corners=True) for i in range(len(self.layers))]
 
             if not self.set_geometry:
                 self.feat_h, self.feat_w = int(base_feat_size[0]), int(base_feat_size[1])

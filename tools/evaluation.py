@@ -27,10 +27,12 @@ class Evaluator:
         prd_kps = geometry.predict_kps(self.rf, src_kps, n_pts, corr)
 
         pck = []
-        pck_ids = torch.zeros((prd_kps.size()[0], prd_kps.size()[-1]), dtype=torch.uint8) # Bx40, default incorrect points
+        #FIXME: add pck_ids later to draw matches
+        pck_ids = None
+        # pck_ids = torch.zeros((prd_kps.size()[0], prd_kps.size()[-1]), dtype=torch.uint8) # Bx40, default incorrect points
         for idx, (pk, tk, thres, npt) in enumerate(zip(prd_kps, trg_kps, pckthres, n_pts)):
             correct_dist, correct_ids, incorrect_ids, ncorrt = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
-            pck_ids[idx, correct_ids] = 1
+            # pck_ids[idx, correct_ids] = 1
             # Collect easy and hard match feature index & store pck to buffer
             if self.supervision == "strong_ce" and not pck_only:
                 easy_match['dist'].append(correct_dist)

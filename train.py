@@ -15,6 +15,7 @@ from mmcv import Config
 import re
 import torch.backends.cudnn as cudnn
 from torch import distributed as dist
+from tqdm import tqdm
 wandb.login()
 
 
@@ -27,9 +28,10 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     # 2. Model status
     model.module.backbone.eval()
     optimizer.zero_grad()
-
+    running_total_loss = 0
     iters_per_epoch = len(dataloader)
-    for iter, data in enumerate(dataloader):
+    databar = tqdm(enumerate(dataloader), total=len(dataloader))
+    for iter, data in enumerate(databar):
         total_iters = iter + epoch * iters_per_epoch
         if args.use_wandb and dist.get_rank() == 0:
             wandb.log({'iters': total_iters})
@@ -75,13 +77,15 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         optimizer.zero_grad()   
         loss.backward()
         optimizer.step()
-        del loss
+        
+        # 7. print running pck, loss (iter % 100 == 0) and 
+        running_total_loss += loss.item()
+        if dist.get_rank() == 0:
+            # progress.display(iter+1)
+            databar.set_description(
+                'training: R_total_loss: %.3f/%.3f' % (running_total_loss / (iter + 1), loss.item()))
 
-        # 7. print running pck, loss
-        if (iter % 100 == 0) and dist.get_rank() == 0:
-            progress.display(iter+1)
-
-        del src_feat, trg_feat, data
+        del src_feat, trg_feat, data, loss
     # torch.cuda.empty_cache()
 
     # 8. collect gradients
@@ -247,11 +251,12 @@ def main(args):
     Logger.info(f'>>>>>>> Use {len(layers)} layers: {str_layer}.')
 
     #TODO: directly change here
-    model = DenseMatch.Model(args, layers)
+    model = DenseMatch.Model(args, layers, freeze=args.freeze_backbone)
     model.cuda()
 
     # freeze the backbone
     if args.freeze_backbone:
+        Logger.info(f'>>>>>>>>>> Backbone frozen!')
         for name, param in model.named_parameters():
             if "backbone" in name:
                 param.requires_grad = False
