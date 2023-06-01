@@ -31,7 +31,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     running_total_loss = 0
     iters_per_epoch = len(dataloader)
     databar = tqdm(enumerate(dataloader), total=len(dataloader))
-    for iter, data in enumerate(databar):
+    for iter, data in databar:
         total_iters = iter + epoch * iters_per_epoch
         if args.use_wandb and dist.get_rank() == 0:
             wandb.log({'iters': total_iters})
@@ -148,7 +148,7 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
     progress_list = [loss_meter, pck_meter]
     progress = ProgressMeter(
         len(dataloader) + (args.distributed and (len(dataloader.sampler) * args.world_size < len(dataloader.dataset))), 
-        progress_list, prefix="Val[{}]".format(epoch))
+        progress_list, prefix="Validation".format(epoch))
 
     # switch to evaluate mode
     model.module.backbone.eval()
@@ -339,8 +339,8 @@ def main(args):
             ">>>>> Train/Eval %d epochs took:%4.3f + %4.3f = %4.3f"%(epoch + 1, end_train_time, end_val_time, end_train_time+end_val_time)+" minutes\n"
         )
         Logger.info(time_message)
-        if epoch%2 == 0:
-            torch.cuda.empty_cache()
+        # if epoch%2 == 0:
+        #     torch.cuda.empty_cache()
 
     Logger.info("==================== Finished training ====================")
 

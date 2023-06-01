@@ -19,18 +19,18 @@ layers = [i for i in range(8, 17)]
 freeze_backbone = True
 
 # Custom module
-init_type = 'kaiming_norm'
-w_group = 4
+init_type = 'xavier_norm'
+w_group = 2
 use_mp = False # matrix_product
-embed_dim = 256
+embed_dim = 128
 use_feat_project = False
 
 # Training
-lr = 0.001
+lr = 0.0001
 lr_backbone = 0.0
-epochs = 100
+epochs = 200
 start_epoch = 0
-batch_size = 64
+batch_size = 128
 optimizer = 'sgd'
 weight_decay = 0.00001
 momentum = 0.9
