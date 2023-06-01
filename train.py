@@ -287,7 +287,7 @@ def main(args):
     # 7. Start training
     log_benchmark = {}
     Logger.info(">>>>>>>>>> Start training")
-    if args.criterion == 'week':
+    if args.criterion == 'weak':
         global weak_lambda
         weak_lambda = torch.FloatTensor(list(map(float, re.findall(r"[-+]?(?:\d*\.*\d+)", args.weak_lambda)))).cuda()
         weak_lambda.requires_grad = False

@@ -45,7 +45,7 @@ class DynamicFeatureSelection(nn.Module):
             for i, f in enumerate(feat):
                 result.append(torch.einsum('d, bchw->bdchw', self.w.T[:,i], f))
     
-            return torch.concatenate(result, dim=2)
+            return torch.cat(result, dim=2)
 
 class GradNorm(nn.Module):
     def __init__(self, num_of_task, alpha=1.5):

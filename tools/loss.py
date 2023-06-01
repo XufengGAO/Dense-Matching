@@ -88,8 +88,9 @@ class WeakDiscMatchLoss(nn.Module):
             match_loss = self.information_match(corr[:bsz], src_feats[:bsz], trg_feats[:bsz])
         else:
             match_loss = torch.zeros(1).cuda()
-                    
-        loss = torch.stack([entropy_loss, match_loss])
+ 
+        loss = torch.cat([entropy_loss, match_loss])
+
         return loss
 
 
@@ -104,8 +105,8 @@ class WeakDiscMatchLoss(nn.Module):
         # [B, HW, HW]
         entropy_loss = torch.sum((-1.*src_pdf) * torch.log(src_pdf+1e-8))/(B*HW0) + \
                        torch.sum((-1.*trg_pdf) * torch.log(trg_pdf+1e-8))/(B*HW1)
-
-        return entropy_loss
+     
+        return entropy_loss.unsqueeze(dim=0)
 
     
     def information_match(self, corr: torch.Tensor, src_feats: torch.Tensor, trg_feats: torch.Tensor):
