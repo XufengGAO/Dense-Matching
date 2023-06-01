@@ -43,7 +43,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         data["pckthres"] = data["pckthres"].cuda(non_blocking=True)       
 
         # 4. Compute output
-        src_feat, trg_feat, corr = model(imgs, masks, bsz)
+        src_feat, trg_feat, corr = model(imgs, bsz)
 
         # 5. Calculate loss
         if args.criterion == "strong_ce":
@@ -106,7 +106,7 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
                 data["pckthres"] = data["pckthres"].cuda(non_blocking=True)                
 
                 # 2. Compute output
-                src_feat, trg_feat, corr = model(imgs, masks, bsz)
+                src_feat, trg_feat, corr = model(imgs, bsz)
 
                 # 3. Calculate loss
                 if args.criterion == "strong_ce":
@@ -168,7 +168,7 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
 
 def build_wandb(args, rank):
     if args.use_wandb and rank == 0:
-        wandb_name = "%.e_%s_%s_%s" % (
+        wandb_name = "%.e_%s_%s" % (
             args.lr,
             args.criterion,
             args.optimizer,
