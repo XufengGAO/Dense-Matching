@@ -3,7 +3,7 @@
 
 benchmark="pfpascal"
 backbone="resnet50"
-nnodes=1
+nnodes=2
 master_addr="10.233.66.69"
 master_port=12367
 

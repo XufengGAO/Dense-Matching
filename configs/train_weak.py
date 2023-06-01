@@ -5,7 +5,7 @@ datapath = './datasets'
 benchmark = "pfpascal"
 alpha = 0.1
 thres = 'auto'
-output_image_size = (256, 256)
+output_image_size = (200, 300)
 cam = ''
 classmap = 0
 
@@ -20,7 +20,7 @@ freeze_backbone = True
 
 # Custom module
 init_type = 'kaiming_norm'
-w_group = 2
+w_group = 4
 use_mp = False # matrix_product
 embed_dim = 256
 use_feat_project = False
@@ -44,11 +44,11 @@ run_id = ''
 wandb_name = 'ddp_scot'
 
 # Loss
-criterion = 'weak'
+criterion = 'strong_ce'
 weak_lambda = '[1.0, 0.0]'
 temp = 0.05 
 collect_grad = False
-use_negative = True 
+use_negative = False 
 
 
 

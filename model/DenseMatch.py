@@ -7,6 +7,7 @@ import torch
 from . import resnet
 import torch.nn as nn
 from .custom_modules import DynamicFeatureSelection
+from contextlib import nullcontext
 
 class Model(nn.Module):
     r"""SCOT framework"""
@@ -214,7 +215,7 @@ class Model(nn.Module):
             feat += res
 
             if hid + 1 in self.layers:
-                feats.append(feat)
+                feats.append(feat.clone())
 
             feat = self.backbone.__getattr__('layer%d' % lid)[bid].relu.forward(feat)
 
