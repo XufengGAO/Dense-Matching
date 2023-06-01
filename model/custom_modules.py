@@ -23,7 +23,7 @@ class DynamicFeatureSelection(nn.Module):
                 k = torch.sparse.FloatTensor(i, v, torch.Size([self.C, self.C]))
                 K.append(k)
                 start += ch
-            self.K = nn.Parameter(torch.stack(K, dim=0), requires_grad=False)
+            self.K = torch.stack(K, dim=0)
 
     def init_weights(self):
         if self.init_type == 'kaiming_norm':
