@@ -14,7 +14,7 @@ class DynamicFeatureSelection(nn.Module):
         self.init_type = init_type
         self.init_weights()
         self.use_mp = use_mp
-        if use_mp == 'matrix_product':
+        if use_mp:
             K = []
             start = 0
             for ch in self.in_channels:
