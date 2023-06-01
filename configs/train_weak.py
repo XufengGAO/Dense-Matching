@@ -15,7 +15,7 @@ pretrain = 'imagenet'
 backbone_path = './backbone/dino_resnet50.pth'
 # r50 = [0] + [3, 4, 6, 3] = 17
 # r101 = [0] + [3, 4, 23, 3] = 34
-layers = [i for i in range(17)]
+layers = [i for i in range(8, 17)]
 freeze_backbone = True
 
 # Custom module
@@ -30,9 +30,9 @@ lr = 0.001
 lr_backbone = 0.0
 epochs = 100
 start_epoch = 0
-batch_size = 8
+batch_size = 64
 optimizer = 'sgd'
-weight_decay = 0.0001
+weight_decay = 0.00001
 momentum = 0.9
 scheduler = 'none'
 
@@ -48,7 +48,7 @@ criterion = 'weak'
 weak_lambda = '[1.0, 0.0]'
 temp = 0.05 
 collect_grad = False
-use_negative = False 
+use_negative = True 
 
 
 
