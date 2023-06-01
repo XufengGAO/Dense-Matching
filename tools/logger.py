@@ -2,21 +2,25 @@ r"""Logging"""
 import logging
 import os
 from torch import distributed as dist
+import datetime
 
 class Logger:
     r"""Writes results of training/testing"""
     @classmethod
     def initialize(cls, args, training=True):
-        if training:
+        if training:            
             if args.logpath == "":
-                logpath = "%.e_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
+#                 logpath = "%.e_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
                 
-                if args.optimizer == "sgd":
-                    logpath = logpath + "_m%.2f"%(args.momentum)
-                if args.scheduler != 'none':
-                    logpath = logpath + "_%s"%(args.scheduler)
+#                 if args.optimizer == "sgd":
+#                     logpath = logpath + "_m%.2f"%(args.momentum)
+#                 if args.scheduler != 'none':
+#                     logpath = logpath + "_%s"%(args.scheduler)
 
-                cls.logpath = os.path.join('logs', 'train', args.backbone, args.pretrain, args.criterion, args.benchmark + "_%s"%(args.alpha), logpath)
+#                 cls.logpath = os.path.join('logs', 'train', args.backbone, args.pretrain, args.criterion, args.benchmark + "_%s"%(args.alpha), logpath)
+                logtime = datetime.datetime.now().__format__('_%m%d_%H%M%S')
+                logpath = args.logpath
+                cls.logpath = os.path.join('logs', logpath + logtime + '.log')
                 filemode = 'w'
             else:
                 cls.logpath = args.logpath

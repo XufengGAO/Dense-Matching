@@ -4,7 +4,7 @@
 benchmark="pfpascal"
 backbone="resnet50"
 nnodes=1
-master_addr="10.233.66.69"
+master_addr="10.233.90.176"
 master_port=12367
 
 # CUDA_VISIBLE_DEVICES=0 \

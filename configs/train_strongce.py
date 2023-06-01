@@ -2,7 +2,7 @@
 
 # Datasets
 datapath = './datasets'
-benchmark = "pfpascal"
+benchmark = 'pfpascal'
 alpha = 0.1
 thres = 'auto'
 output_image_size = (200, 300)
@@ -10,7 +10,7 @@ cam = ''
 classmap = 0
 
 # Models
-backbone = "resnet50"
+backbone = 'resnet50'
 pretrain = 'imagenet' 
 backbone_path = './backbone/dino_resnet50.pth'
 # r50 = [0] + [3, 4, 6, 3] = 17
@@ -30,25 +30,25 @@ lr = 0.001
 lr_backbone = 0.0
 epochs = 200
 start_epoch = 0
-batch_size = 16
+batch_size = 32
 optimizer = 'sgd'
-weight_decay = 0.00001
+weight_decay = 0.0
 momentum = 0.9
 scheduler = 'none'
 
 # Misc
-use_wandb = False
+use_wandb = True
 logpath = ''
 resume = ''
 run_id = ''
 wandb_name = 'Multiple-W-Group'
 
 # Loss
-criterion = 'weak'
+criterion = 'strong_ce'
 weak_lambda = '[1.0, 0.0]'
 temp = 0.05 
 collect_grad = False
-use_negative = True 
+use_negative = False 
 
 
 
