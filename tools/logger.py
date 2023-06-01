@@ -16,7 +16,7 @@ class Logger:
                 if args.scheduler != 'none':
                     logpath = logpath + "_%s"%(args.scheduler)
 
-                cls.logpath = os.path.join('logs', 'ddp', 'train', args.backbone, args.pretrain, args.criterion, args.benchmark + "_%s"%(args.alpha), logpath)
+                cls.logpath = os.path.join('logs', 'train', args.backbone, args.pretrain, args.criterion, args.benchmark + "_%s"%(args.alpha), logpath)
                 filemode = 'w'
             else:
                 cls.logpath = args.logpath

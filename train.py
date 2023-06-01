@@ -83,7 +83,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         if dist.get_rank() == 0:
             # progress.display(iter+1)
             databar.set_description(
-                'training: R_total_loss: %.3f/%.3f' % (running_total_loss / (iter + 1), loss.item()))
+                'Training [%d/%d]: R_total_loss: %.3f/%.3f' % (epoch, args.epochs, running_total_loss/(iter + 1), loss.item()))
 
         del src_feat, trg_feat, data, loss
     # torch.cuda.empty_cache()
@@ -173,10 +173,11 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
 
 def build_wandb(args, rank):
     if args.use_wandb and rank == 0:
-        wandb_name = "%.e_%s_%s" % (
+        wandb_name = "%.e_%s_%s_wg%d" % (
             args.lr,
             args.criterion,
             args.optimizer,
+            args.w_group,
         )
         if args.scheduler != "none":
             wandb_name += "_%s" % (args.scheduler)
@@ -184,8 +185,7 @@ def build_wandb(args, rank):
             wandb_name = wandb_name + "_m%.2f" % (args.momentum)
         
         if args.use_negative:
-            wandb_name += "_bsz%d-neg" % (args.batch_size*2)
-            args.batch_size = args.batch_size*2
+            wandb_name += "_neg-bsz%d" % (args.batch_size)
         else:
             wandb_name += "_bsz%d" % (args.batch_size)
 
@@ -201,25 +201,16 @@ def build_wandb(args, rank):
         )
 
         wandb.define_metric("iters")
-        wandb.define_metric("running_avg_loss", step_metric="iters")
-        wandb.define_metric("running_avg_pck", step_metric="iters")
 
         wandb.define_metric("epochs")
         wandb.define_metric("trn_loss", step_metric="epochs")
-        wandb.define_metric("trn_pck", step_metric="epochs")
 
         wandb.define_metric("val_loss", step_metric="epochs")
         wandb.define_metric("val_pck", step_metric="epochs")
 
         if args.criterion == "weak":
-            wandb.define_metric("discSelf_loss", step_metric="epochs")
-            wandb.define_metric("discCross_loss", step_metric="epochs")
-            wandb.define_metric("match_loss", step_metric="epochs")
-            
-            if args.collect_grad:
-                wandb.define_metric("discSelfGrad", step_metric="iters")
-                wandb.define_metric("discCrossGrad", step_metric="iters")
-                wandb.define_metric("matchGrad", step_metric="iters")                
+            wandb.define_metric("EntropyLoss", step_metric="epochs")
+            wandb.define_metric("MatchLoss", step_metric="epochs")             
 
 def main(args):
     # 1. Init Logger
