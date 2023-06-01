@@ -30,14 +30,14 @@ lr = 0.001
 lr_backbone = 0.0
 epochs = 100
 start_epoch = 0
-batch_size = 8 
+batch_size = 16
 optimizer = 'sgd'
 weight_decay = 0.0001
 momentum = 0.9
 scheduler = 'none'
 
 # Misc
-use_wandb = True
+use_wandb = False
 logpath = ''
 resume = ''
 run_id = ''

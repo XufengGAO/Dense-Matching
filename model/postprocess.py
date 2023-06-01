@@ -34,13 +34,14 @@ class PostProcess:
 
     def compute_bin_id(self, src_imsize, src_box, trg_box, hs_cellsize, nbins_x):
         r"""Computes Hough space bin ids for voting"""
-        src_ptref = src_imsize.float()
+        src_ptref = torch.tensor(src_imsize, dtype=torch.float).to(src_box.device)
         src_trans = geometry.center(src_box)
         trg_trans = geometry.center(trg_box)
         xy_vote = (src_ptref.unsqueeze(0).expand_as(src_trans) - src_trans).unsqueeze(2).\
                       repeat(1, 1, len(trg_box)) + trg_trans.t().unsqueeze(0).repeat(len(src_box), 1, 1)
 
         bin_ids = (xy_vote / hs_cellsize).long()
+        del src_ptref
 
         return bin_ids[:, 0, :] + bin_ids[:, 1, :] * nbins_x
 

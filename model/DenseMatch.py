@@ -138,7 +138,7 @@ class Model(nn.Module):
         trg_feat = trg_feat.view(trg_feat.size()[0], trg_feat.size()[1], trg_feat.size()[2], -1).transpose(2, 3)
 
         # 3. Calculate Corr, [B, D, HW, HW] 
-        sim = self.calculate_sim(src_feat, trg_feat, bsz)
+        sim = self.calculate_sim(src_feat, trg_feat)
 
         #FIXME, if use projector, projects to [B, HW, HW]
         if self.corr_projector is not None:
