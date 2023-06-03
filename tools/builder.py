@@ -7,7 +7,7 @@ from .logger import Logger
 from torch import distributed as dist
 import os
 import torch.optim as optim
-from .loss import StrongCrossEntropyLoss, StrongFlowLoss, WeakDiscMatchLoss
+from .loss import StrongCrossEntropyLoss, StrongFlowLoss, WeakCEMatchLoss
 
 def init_distributed_mode(args):
     """init for distribute mode"""
@@ -49,66 +49,49 @@ def init_distributed_mode(args):
 
     return dist_dict
 
-def build_dataloader(args, rank, world_size):
+def build_dataloader(data, datapath, batch_size, rank, world_size):
     num_workers = 16 if torch.cuda.is_available() else 8
     pin_memory = True if torch.cuda.is_available() else False
 
-    Logger.info("Loading %s dataset" % (args.benchmark))
+    Logger.info("Loading %s %s dataset" % (data.benchmark, data.type))
 
-    # training set
-    train_dataset = load_dataset(
-        args.benchmark,
-        args.datapath,
-        args.thres,
-        "trn",
-        args.cam,
-        output_image_size=args.output_image_size,
+    dataset = load_dataset(
+        data.benchmark,
+        datapath,
+        data.thres,
+        data.type,
+        data.cam,
+        output_image_size=data.output_image_size,
         use_resize=True,
     )
-    train_sampler = DistributedSampler(
-        train_dataset, num_replicas=world_size, rank=rank, shuffle=True
+    data_sampler = DistributedSampler(
+        dataset, num_replicas=world_size, rank=rank, shuffle=data.sampler.shuffle, drop_last=data.sampler.drop_last
     )
-    train_loader = DataLoader(
-        dataset=train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-        num_workers=num_workers, pin_memory=pin_memory, sampler=train_sampler)
-
-    # validation set
-    val_dataset = load_dataset(
-        args.benchmark,
-        args.datapath,
-        args.thres,
-        "val",
-        args.cam,
-        output_image_size=args.output_image_size,
-        use_resize=True,
-    )
-    val_sampler = DistributedSampler(
-        val_dataset, num_replicas=world_size, rank=rank, shuffle=False, drop_last=True
-    )
-    val_loader = DataLoader(
-        dataset=val_dataset, batch_size=args.batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=pin_memory, sampler=val_sampler,
-    )
+    dataloader = DataLoader(
+        dataset=dataset, batch_size=batch_size, shuffle=(data_sampler is None),
+        num_workers=num_workers, pin_memory=pin_memory, sampler=data_sampler)
 
     Logger.info(
-        f"Data loaded: there are {len(train_loader.dataset)} train images and {len(val_loader.dataset)} val images."
+        f"Data loaded: there are {len(dataloader.dataset)} {data.type} images"
     )
 
     # sub-validation set
-    if len(val_loader.sampler) * world_size < len(val_loader.dataset):
-        aux_val_dataset = Subset(val_loader.dataset, range(len(val_loader.sampler)*world_size, len(val_loader.dataset)))
-        aux_val_loader = DataLoader(aux_val_dataset, batch_size=args.batch_size, shuffle=False,num_workers=num_workers, pin_memory=pin_memory)
+    aux_loader = None
+    if data.type == 'val':
+        if len(dataloader.sampler) * world_size < len(dataloader.dataset):
+            aux_dataset = Subset(dataloader.dataset, range(len(dataloader.sampler)*world_size, len(dataloader.dataset)))
+            aux_loader = DataLoader(aux_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
-        Logger.info('Create Subset: ', len(val_loader.sampler),  world_size, len(val_loader.dataset))
-    else:
-        aux_val_loader = None
-    return train_loader, val_loader, aux_val_loader
+            Logger.info('Create Subset: ', len(dataloader.sampler),  world_size, len(dataloader.dataset))
+    
+    
+    return dataloader, aux_loader
 
-def build_optimizer(args, model):
+def build_optimizer(optimizer, model):
     """
     Build optimizer, e.g., sgd, adamw.
     """
-    assert args.optimizer in ["sgd", "adamw"], "Unknown optimizer type"
+    assert optimizer.type in ["sgd", "adamw"], "Unknown optimizer type"
     optimizer = None
 
     # take parameters
@@ -121,13 +104,13 @@ def build_optimizer(args, model):
         parameter_group_vars["params"].append(param)
 
     # make optimizers
-    if args.optimizer == "sgd":
+    if optimizer.type == "sgd":
         optimizer = optim.SGD(
-            [parameter_group_vars], lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay
+            [parameter_group_vars], lr=optimizer.lr, momentum=optimizer.momentum, weight_decay=optimizer.weight_decay
         )
-    elif args.optimizer == "adamw":
+    elif optimizer.type == "adamw":
         optimizer = optim.AdamW(
-            [parameter_group_vars], lr=args.lr, weight_decay=args.weight_decay
+            [parameter_group_vars], lr=optimizer.lr, weight_decay=optimizer.weight_decay
         )
 
     return optimizer
@@ -142,7 +125,7 @@ def build_scheduler(args, optimizer, n_iter_per_epoch, config=None):
     lr_scheduler = None
     if args.scheduler == "cycle":
         lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            optimizer, args.lr, epochs=args.epochs, steps_per_epoch=n_iter_per_epoch
+            optimizer, args.lr, epochs=args.total_epochs, steps_per_epoch=n_iter_per_epoch
         )
     elif args.scheduler == "step":
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
@@ -151,39 +134,40 @@ def build_scheduler(args, optimizer, n_iter_per_epoch, config=None):
 
     return lr_scheduler
 
-def build_criterion(args):
-    if args.criterion == "weak":
-        criterion = WeakDiscMatchLoss(args.temp, args.weak_lambda)
-    elif args.criterion == "strong_ce":
-        criterion = StrongCrossEntropyLoss(args.alpha)
-    elif args.criterion == "flow":
+def build_criterion(loss, alpha):
+    if loss.type == "weak":
+        criterion = WeakCEMatchLoss(loss)
+    elif loss.type == "strong_ce":
+        criterion = StrongCrossEntropyLoss(alpha)
+    elif loss.type == "flow":
         criterion = StrongFlowLoss()
     else:
         raise ValueError("Unknown objective loss")
 
     return criterion
 
-def build_checkpoint(args, model, optimizer, lr_scheduler):
+def build_checkpoint(model_dict, model, optimizer, lr_scheduler):
     max_pck = 0.0
-    if args.resume:
-        Logger.info(f">>>>>>>>>> Resuming from {args.resume} ..........")
-        checkpoint = torch.load(args.resume, map_location="cpu")
+    start_epoch = -100
+    if model_dict.resume:
+        Logger.info(f">>>>>>>>>> Resuming from {model_dict.resume} ..........")
+        checkpoint = torch.load(model_dict.resume, map_location="cpu")
 
         msg = model.load_state_dict(checkpoint["model"], strict=False)
         Logger.info(msg)
         
         if (
-            not args.eval_mode
+            not model_dict.eval_mode  #TODO CHECK HERE
             and "optimizer" in checkpoint
             and "lr_scheduler" in checkpoint
             and "epoch" in checkpoint
         ):
             optimizer.load_state_dict(checkpoint["optimizer"])
             lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
-            args.start_epoch = checkpoint["epoch"] + 1
+            start_epoch = checkpoint["epoch"] + 1
 
             Logger.info(
-                f"=> loaded successfully '{args.resume}' (epoch {checkpoint['epoch']})"
+                f"=> loaded successfully '{model_dict.resume}' (epoch {checkpoint['epoch']})"
             )
 
             if "max_pck" in checkpoint:
@@ -195,9 +179,9 @@ def build_checkpoint(args, model, optimizer, lr_scheduler):
         torch.cuda.empty_cache()
 
     # load backbone
-    if args.pretrain in ["dino", "denseCL"]:
-        Logger.info("Loading backbone from %s" % (args.backbone_path))
-        pretrained_backbone = torch.load(args.backbone_path, map_location="cpu")
+    if model_dict.backbone.pretrain in ["dino", "denseCL"]:
+        Logger.info("Loading backbone from %s" % (model_dict.backbone.backbone_path))
+        pretrained_backbone = torch.load(model_dict.backbone.backbone_path, map_location="cpu")
         backbone_keys = list(model.backbone.state_dict().keys())
 
         if "state_dict" in pretrained_backbone:
@@ -212,7 +196,7 @@ def build_checkpoint(args, model, optimizer, lr_scheduler):
         del pretrained_backbone
         torch.cuda.empty_cache()
 
-    return max_pck
+    return max_pck, start_epoch
 
 def save_checkpoint(args, epoch, model, max_pck, optimizer, lr_scheduler):
 

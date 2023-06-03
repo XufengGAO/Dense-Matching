@@ -2,19 +2,18 @@ r"""Implementation of Dynamic Layer Gating (DLG)"""
 import torch.nn as nn
 import torch
 import torch.optim as optim
+import torch.nn.functional as F
 
 class DynamicFeatureSelection(nn.Module):
-    def __init__(self, in_channels, N, init_type='kaiming_norm', w_group=1, use_mp=True):
+    def __init__(self, in_channels, N, neck):
         super(DynamicFeatureSelection, self).__init__()
         self.in_channels = in_channels
         self.C = sum(in_channels)
-        self.num_layers = N
-        self.w_group = w_group 
-        self.w = nn.Parameter(torch.zeros((self.num_layers, self.w_group))) # N x D
-        self.init_type = init_type
-        self.init_weights()
-        self.use_mp = use_mp
-        if use_mp:
+        self.w = nn.Parameter(torch.zeros((N, neck.D))) # N x D
+        self.init_weights(neck.init_type)
+
+        self.use_mp = neck.use_mp
+        if self.use_mp:
             K = []
             start = 0
             for ch in self.in_channels:
@@ -25,27 +24,36 @@ class DynamicFeatureSelection(nn.Module):
                 start += ch
             self.K = torch.stack(K, dim=0).cuda()
 
-    def init_weights(self):
-        if self.init_type == 'kaiming_norm':
+        self.use_relu = neck.use_relu
+
+    def init_weights(self, init_type):
+        if init_type == 'kaiming_norm':
             nn.init.kaiming_normal_(self.w.data)
-        elif self.init_type == 'xavier_norm':
+        elif init_type == 'xavier_norm':
             nn.init.xavier_normal_(self.w.data)
         else:
             nn.init.uniform_(self.w.data)
 
+
     def forward(self, feat):
-        
+
         # matric product, feat shape in [B, C, HW]
         if self.use_mp:
+            feat = torch.cat(feat, dim=1)  # list of [B, Ci, H, W] -> [B, C, H, W]
             KF = torch.einsum('ncc,bchw->bnchw', self.K.to_dense(), feat).to_sparse()
-            return torch.einsum('dn, bnchw->bdchw', self.w.T, KF.to_dense())
+            if self.use_relu:
+                return F.relu(torch.einsum('dn, bnchw->bdchw', self.w.T, KF.to_dense()), inplace=True)
+            else:
+                return torch.einsum('dn, bnchw->bdchw', self.w.T, KF.to_dense())
         else:
             # for-loop, feat is a list
             result = []
             for i, f in enumerate(feat):
                 result.append(torch.einsum('d, bchw->bdchw', self.w.T[:,i], f))
-    
-            return torch.cat(result, dim=2)
+            if self.use_relu:
+                return F.relu(torch.cat(result, dim=2), inplace=True)
+            else:
+                return torch.cat(result, dim=2)
 
 class GradNorm(nn.Module):
     def __init__(self, num_of_task, alpha=1.5):

@@ -23,7 +23,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     # Logger.info(f'Current learning rate for different parameter groups: {[it["lr"] for it in optimizer.param_groups]}')
 
     # 1. Meters
-    progress, meters = utils.get_Meters(args.criterion, args.collect_grad, len(dataloader), epoch)
+    progress, meters = utils.get_Meters(args.loss.type, args.collect_grad, len(dataloader), epoch)
     
     # 2. Model status
     model.module.backbone.eval()
@@ -38,21 +38,21 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
 
         # 3. Get inputs
         bsz = data['src_img'].size(0)
-        imgs, masks, num_negatives = utils.get_input(data, args.use_negative)
+        imgs, masks, num_negatives = utils.get_input(data, args.loss.use_negative)
         data["src_kps"] = data["src_kps"].cuda(non_blocking=True)
         data["n_pts"] = data["n_pts"].cuda(non_blocking=True)
         data["trg_kps"] = data["trg_kps"].cuda(non_blocking=True)
         data["pckthres"] = data["pckthres"].cuda(non_blocking=True)       
 
         # 4. Compute output
-        src_feat, trg_feat, corr = model(imgs, bsz)
+        src_feat, trg_feat, corr = model(imgs)
 
         with torch.no_grad():
             if evaluator.rf_center is None and evaluator.rf is None:
                 rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
                 evaluator.set_geo(rfsz, jsz, feat_h, feat_w)
         # 5. Calculate loss
-        if args.criterion == "strong_ce":
+        if args.loss.type == "strong_ce":
             with torch.no_grad():
                 # return dict results                
                 eval_result = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
@@ -61,13 +61,11 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
                 corr, eval_result['easy_match'], eval_result['hard_match'], data["pckthres"], data["n_pts"]
             )
             del eval_result
-        elif args.criterion == "weak":
-            task_loss = criterion(corr, src_feat, trg_feat, bsz, num_negatives)
+        elif args.loss.type == "weak":
+            loss, ce_loss, match_loss = criterion(corr, src_feat, trg_feat, bsz, num_negatives)
 
-            meters['EntropyLoss'].update(task_loss[0].item(), bsz)
-            meters['MatchLoss'].update(task_loss[1].item(), bsz)
-
-            loss = (weak_lambda * task_loss).sum()
+            meters['EntropyLoss'].update(ce_loss, bsz)
+            meters['MatchLoss'].update(match_loss, bsz)
 
         del corr
 
@@ -83,7 +81,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
         if dist.get_rank() == 0:
             # progress.display(iter+1)
             databar.set_description(
-                'Training [%d/%d]: R_total_loss: %.3f/%.3f' % (epoch, args.epochs, running_total_loss/(iter + 1), loss.item()))
+                'Training [%d/%d]: R_total_loss: %.3f/%.3f' % (epoch, args.total_epochs, running_total_loss/(iter + 1), loss.item()))
 
         del src_feat, trg_feat, data, loss
     # torch.cuda.empty_cache()
@@ -93,7 +91,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     for loss_name in list(meters.keys()):
         meters[loss_name].all_reduce()
 
-    if args.criterion == "weak" and args.use_wandb and dist.get_rank() == 0:
+    if args.loss.type == "weak" and args.use_wandb and dist.get_rank() == 0:
             wandb.log({"EntropyLoss": meters['EntropyLoss'].avg, "MatchLoss": meters['MatchLoss'].avg})
     
     return meters['loss'].avg
@@ -114,7 +112,7 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
                 src_feat, trg_feat, corr = model(imgs, bsz)
 
                 # 3. Calculate loss
-                if args.criterion == "strong_ce":
+                if args.loss.type == "strong_ce":
                     # return dict results                
                     eval_result = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
                                                     corr.detach().clone(), data['pckthres'], pck_only=False)
@@ -122,9 +120,8 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
                         corr, eval_result['easy_match'], eval_result['hard_match'], data["pckthres"], data["n_pts"]
                     )
                     del eval_result
-                elif args.criterion == "weak":
-                    task_loss = criterion(corr, src_feat, trg_feat, bsz, num_negatives)
-                    loss = (weak_lambda * task_loss).sum()
+                elif args.loss.type == "weak":
+                    loss, _, _ = criterion(corr, src_feat, trg_feat, bsz, num_negatives)
 
                 loss_meter.update(loss.item(), bsz)
 
@@ -174,26 +171,26 @@ def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
 def build_wandb(args, rank):
     if args.use_wandb and rank == 0:
         wandb_name = "%.e_%s_%s_wg%d" % (
-            args.lr,
-            args.criterion,
-            args.optimizer,
-            args.w_group,
+            args.optimizer.lr,
+            args.loss.type,
+            args.optimizer.type,
+            args.model.neck.D,
         )
         if args.scheduler != "none":
             wandb_name += "_%s" % (args.scheduler)
-        if args.optimizer == "sgd":
-            wandb_name = wandb_name + "_m%.2f" % (args.momentum)
+        if args.optimizer.type == "sgd":
+            wandb_name = wandb_name + "_m%.2f" % (args.optimizer.momentum)
         
-        if args.use_negative:
-            wandb_name += "_neg-bsz%d" % (args.batch_size)
+        if args.loss.use_negative:
+            wandb_name += "_neg-bsz%d" % (args.data.batch_size)
         else:
-            wandb_name += "_bsz%d" % (args.batch_size)
+            wandb_name += "_bsz%d" % (args.data.batch_size)
 
-        if args.criterion == 'weak':
-            wandb_name += ("_%s_tp%.2f"%(args.weak_lambda, args.temp))
+        if args.loss.type == 'weak':
+            wandb_name += ("_t%s"%(args.loss.temp))
 
-        _wandb = wandb.init(
-            project=args.wandb_name,
+        _ = wandb.init(
+            project=args.wandb_proj_name,
             config=args,
             id=args.run_id,
             resume="allow",
@@ -208,7 +205,7 @@ def build_wandb(args, rank):
         wandb.define_metric("val_loss", step_metric="epochs")
         wandb.define_metric("val_pck", step_metric="epochs")
 
-        if args.criterion == "weak":
+        if args.loss.type == "weak":
             wandb.define_metric("EntropyLoss", step_metric="epochs")
             wandb.define_metric("MatchLoss", step_metric="epochs")             
 
@@ -227,26 +224,15 @@ def main(args):
     # cudnn.deterministic = True
     
     # 2. Dataloader
-    train_loader, val_loader, aux_val_loader = build_dataloader(args, rank, world_size)
+    train_loader, _ = build_dataloader(args.data.train, args.data.datapath, args.data.batch_size, rank, world_size)
+    val_loader, aux_val_loader = build_dataloader(args.data.val, args.data.datapath, args.data.batch_size, rank, world_size)
 
     # 3. Model
-    assert args.backbone in ["resnet50", "resnet101"], "Unknown backbone"
-    Logger.info(f">>>>>>>>>> Creating model:{args.backbone} + {args.pretrain} <<<<<<<<<<")
-
-    if args.layers:
-        layers = args.layers
-    else:
-        n_layers = {"resnet50": 17, "resnet101": 34, "fcn101": 34}
-        layers = list(range(n_layers[args.backbone]))
-    str_layer = ', '.join(str(i) for i in layers)
-    Logger.info(f'>>>>>>> Use {len(layers)} layers: {str_layer}.')
-
-    #TODO: directly change here
-    model = DenseMatch.Model(args, layers, freeze=args.freeze_backbone)
+    model = DenseMatch.Model(args.model, args.loss)
     model.cuda()
 
     # freeze the backbone
-    if args.freeze_backbone:
+    if model.freeze:
         Logger.info(f'>>>>>>>>>> Backbone frozen!')
         for name, param in model.named_parameters():
             if "backbone" in name:
@@ -254,8 +240,10 @@ def main(args):
 
     # 4. Optimizer, Scheduler, and Loss
     optimizer = build_optimizer(args, model)
-    lr_scheduler = build_scheduler(args, optimizer, len(train_loader), config=None)
-    criterion = build_criterion(args)
+    # To give scheduler
+    #lr_scheduler = build_scheduler(args, optimizer, len(train_loader), config=None)
+    lr_scheduler = None
+    criterion = build_criterion(args.loss, args.data.alpha)
 
     # 5. Distributed training
     model = torch.nn.parallel.DistributedDataParallel(
@@ -270,29 +258,28 @@ def main(args):
     Logger.info(f">>>>>>>>>> Number of training params: {n_parameters}")
 
     # resume the model
-    if args.resume or args.pretrain in ["dino", "denseCL"]:
+    if args.model.resume or args.model.pretrain in ["dino", "denseCL"]:
         model_without_ddp = model.module
-        max_pck = build_checkpoint(args, model_without_ddp, optimizer, lr_scheduler)
+        max_pck, start_epoch = build_checkpoint(args.model, model_without_ddp, optimizer, lr_scheduler)
+        if start_epoch > 0:
+            args.start_epoch = start_epoch
     else:
         max_pck = 0.0
 
     # 6. Evaluator, Wandb
     global evaluator
-    evaluator = Evaluator(criterion=args.criterion, device=device, alpha=args.alpha)
+    evaluator = Evaluator(criterion=args.loss.type, device=device, alpha=args.data.alpha)
     build_wandb(args, rank)
 
     # 7. Start training
     log_benchmark = {}
     Logger.info(">>>>>>>>>> Start training")
-    if args.criterion == 'weak':
-        global weak_lambda
-        weak_lambda = torch.FloatTensor(list(map(float, re.findall(r"[-+]?(?:\d*\.*\d+)", args.weak_lambda)))).cuda()
-        weak_lambda.requires_grad = False
 
     global PostProcessModule
     PostProcessModule = None
 
-    for epoch in range(args.start_epoch, args.epochs):
+    dist.barrier()
+    for epoch in range(args.start_epoch, args.total_epochs):
         train_loader.sampler.set_epoch(epoch)
 
         # train
@@ -364,7 +351,8 @@ if __name__ == "__main__":
     parser.add_argument('--use_mp', type= utils.boolean_string, nargs="?", default=True)
     parser.add_argument('--embed_dim', type=int, default=256, help='dimension of projection')
     parser.add_argument('--use_feat_project', type= utils.boolean_string, nargs="?", default=False)
-    
+    parser.add_argument('--use_learner', type= utils.boolean_string, nargs="?", default=False)
+
     # Training parameters
     # parser.add_argument('--gpu', type=str, default='0', help='GPU id')
     parser.add_argument('--lr', type=float, default=0.01) 
@@ -421,8 +409,8 @@ if __name__ == "__main__":
         args = Config.fromfile(args.config)
         args.merge_from_dict(dist_dict)
 
-    if args.use_negative:
-        assert args.criterion == 'weak', "use_negative is only for weak loss"
+    if args.loss.type in ['strong_ce']:
+        args.loss.use_negative = False
 
     if args.use_wandb and args.run_id == '':
         args.run_id = wandb.util.generate_id()

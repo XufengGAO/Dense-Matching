@@ -10,14 +10,6 @@ class Logger:
     def initialize(cls, args, training=True):
         if training:            
             if args.logpath == "":
-#                 logpath = "%.e_%s_bsz%d"%(args.lr, args.optimizer, args.batch_size)
-                
-#                 if args.optimizer == "sgd":
-#                     logpath = logpath + "_m%.2f"%(args.momentum)
-#                 if args.scheduler != 'none':
-#                     logpath = logpath + "_%s"%(args.scheduler)
-
-#                 cls.logpath = os.path.join('logs', 'train', args.backbone, args.pretrain, args.criterion, args.benchmark + "_%s"%(args.alpha), logpath)
                 logtime = datetime.datetime.now().__format__('_%m%d_%H%M%S')
                 logpath = args.logpath
                 cls.logpath = os.path.join('logs', logpath + logtime + '.log')
@@ -27,7 +19,7 @@ class Logger:
                 filemode = 'a'
         else:
             # logtime = datetime.datetime.now().__format__('_%m%d_%H%M%S')
-            cls.logpath = os.path.join('logs', 'test', args.backbone, args.pretrain, args.criterion, args.benchmark, args.logpath)
+            cls.logpath = args.logpath
             filemode = 'w'
         
         if dist.get_rank() == 0:

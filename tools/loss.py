@@ -50,30 +50,17 @@ class StrongCrossEntropyLoss(nn.Module):
 
         return cross_ent
     
-
-def mutual_nn_filter(correlation_matrix):
-    r"""Mutual nearest neighbor filtering (Rocco et al. NeurIPS'18)"""
-    corr_src_max = torch.max(correlation_matrix, dim=2, keepdim=True)[0]
-    corr_trg_max = torch.max(correlation_matrix, dim=1, keepdim=True)[0]
-    corr_src_max[corr_src_max == 0] += 1e-30
-    corr_trg_max[corr_trg_max == 0] += 1e-30
-
-    corr_src = correlation_matrix / corr_src_max
-    corr_trg = correlation_matrix / corr_trg_max
-
-    return correlation_matrix * (corr_src * corr_trg)
-    
-class WeakDiscMatchLoss(nn.Module):
+class WeakCEMatchLoss(nn.Module):
     r"""Weakly-supervised discriminative and maching loss"""
-    def __init__(self, temp=1.0, weak_lambda=None) -> None:
-        super(WeakDiscMatchLoss, self).__init__()
-        self.temp = temp
-        weak_lambda = list(map(float, re.findall(r"[-+]?(?:\d*\.*\d+)", weak_lambda)))
-        self.weak_lambda = [i>0.0 for i in weak_lambda]
+    def __init__(self, loss) -> None:
+        super(WeakCEMatchLoss, self).__init__()
+        self.t = loss.temp
+        self.ce_w = loss.ce_loss_weight
+        self.match_w = loss.match_loss_weight
 
     def forward(self, corr: torch.Tensor, src_feats: torch.Tensor, trg_feats: torch.Tensor, bsz, num_negatives=0) -> torch.Tensor:
 
-        if self.weak_lambda[0]:
+        if self.ce_w>1e-15:
             entropy_loss_pos = self.information_entropy(corr[:bsz])
             if num_negatives > 0:
                 entropy_loss_neg = self.information_entropy(corr[bsz:])
@@ -84,14 +71,14 @@ class WeakDiscMatchLoss(nn.Module):
         else:
             entropy_loss = torch.zeros(1).cuda()
 
-        if self.weak_lambda[1]:
+        if self.match_w>1e-15:
             match_loss = self.information_match(corr[:bsz], src_feats[:bsz], trg_feats[:bsz])
         else:
             match_loss = torch.zeros(1).cuda()
  
-        loss = torch.cat([entropy_loss, match_loss])
+        loss = self.ce_w * entropy_loss + self.match_w * match_loss
 
-        return loss
+        return loss, entropy_loss.item(), match_loss.item()
 
 
     def information_entropy(self, corr: torch.Tensor):
@@ -116,8 +103,8 @@ class WeakDiscMatchLoss(nn.Module):
         trg_feats = F.normalize(trg_feats, p=2, dim=2)
         
         # corr = [B, HW0, HW1]
-        s_corr = F.softmax(corr/self.temp, dim=2)
-        t_corr = F.softmax(corr.permute(0,2,1)/self.temp, dim=2)
+        s_corr = F.softmax(corr/self.t[0], dim=2)
+        t_corr = F.softmax(corr.permute(0,2,1)/self.t[0], dim=2)
 
         src2trg = src_feats - torch.bmm(s_corr, trg_feats) # [B, HW0, C]
         trg2src = trg_feats - torch.bmm(t_corr, src_feats) # [B, HW1, C]
@@ -138,78 +125,140 @@ class StrongFlowLoss(nn.Module):
         r"""Strongly-supervised matching loss (L_{match})"""
         
         B = x.size()[0]
-        grid_x, grid_y = soft_argmax(x.view(B, -1, feat_size, feat_size), feature_size=feat_size)
+        grid_x, grid_y = self.soft_argmax(x.view(B, -1, feat_size, feat_size), feature_size=feat_size)
 
         pred_flow = torch.cat((grid_x, grid_y), dim=1)
-        pred_flow = unnormalise_and_convert_mapping_to_flow(pred_flow)
+        pred_flow = self.unnormalise_and_convert_mapping_to_flow(pred_flow)
 
-        loss_flow = EPE(pred_flow, flow_gt)
+        loss_flow = self.EPE(pred_flow, flow_gt)
         return loss_flow
     
-def soft_argmax(self, corr, beta=0.02, feature_size=64):
-    r'''SFNet: Learning Object-aware Semantic Flow (Lee et al.)'''
-    x_normal = nn.Parameter(torch.tensor(np.linspace(-1,1,feature_size), dtype=torch.float, requires_grad=False)).cuda()
-    y_normal = nn.Parameter(torch.tensor(np.linspace(-1,1,feature_size), dtype=torch.float, requires_grad=False)).cuda()
+    def soft_argmax(self, corr, beta=0.02, feature_size=64):
+        r'''SFNet: Learning Object-aware Semantic Flow (Lee et al.)'''
+        x_normal = nn.Parameter(torch.tensor(np.linspace(-1,1,feature_size), dtype=torch.float, requires_grad=False)).cuda()
+        y_normal = nn.Parameter(torch.tensor(np.linspace(-1,1,feature_size), dtype=torch.float, requires_grad=False)).cuda()
 
-    b,_,h,w = corr.size()
+        b,_,h,w = corr.size()
+        
+        corr = self.softmax_with_temperature(corr, beta=beta, d=1)
+        corr = corr.view(-1,h,w,h,w) # (target hxw) x (source hxw)
+
+        grid_x = corr.sum(dim=1, keepdim=False) # marginalize to x-coord.
+        x_normal = x_normal.expand(b,w)
+        x_normal = x_normal.view(b,w,1,1)
+        grid_x = (grid_x*x_normal).sum(dim=1, keepdim=True) # b x 1 x h x w
+        
+        grid_y = corr.sum(dim=2, keepdim=False) # marginalize to y-coord.
+        y_normal = y_normal.expand(b,h)
+        y_normal = y_normal.view(b,h,1,1)
+        grid_y = (grid_y*y_normal).sum(dim=1, keepdim=True) # b x 1 x h x w
+        return grid_x, grid_y
+
+    def EPE(self, input_flow, target_flow, sparse=True, mean=True, sum=False):
+
+        EPE_map = torch.norm(target_flow-input_flow, 2, 1)
+        batch_size = EPE_map.size(0)
+        if sparse:
+            # invalid flow is defined with both flow coordinates to be exactly 0
+            mask = (target_flow[:,0] == 0) & (target_flow[:,1] == 0)
+
+            EPE_map = EPE_map[~mask]
+        if mean:
+            return EPE_map.mean()
+        elif sum:
+            return EPE_map.sum()
+        else:
+            return EPE_map.sum()/torch.sum(~mask)
+
+    def unnormalise_and_convert_mapping_to_flow(self, map):
+        # here map is normalised to -1;1
+        # we put it back to 0,W-1, then convert it to flow
+        B, C, H, W = map.size()
+        mapping = torch.zeros_like(map)
+        # mesh grid
+        mapping[:,0,:,:] = (map[:, 0, :, :].float().clone() + 1) * (W - 1) / 2.0 # unormalise
+        mapping[:,1,:,:] = (map[:, 1, :, :].float().clone() + 1) * (H - 1) / 2.0 # unormalise
+
+        xx = torch.arange(0, W).view(1,-1).repeat(H,1)
+        yy = torch.arange(0, H).view(-1,1).repeat(1,W)
+        xx = xx.view(1,1,H,W).repeat(B,1,1,1)
+        yy = yy.view(1,1,H,W).repeat(B,1,1,1)
+        grid = torch.cat((xx,yy),1).float()
+
+        if mapping.is_cuda:
+            grid = grid.cuda()
+        flow = mapping - grid
+        return flow
+
+    def softmax_with_temperature(self, x, beta, d = 1):
+        r'''SFNet: Learning Object-aware Semantic Flow (Lee et al.)'''
+        M, _ = x.max(dim=d, keepdim=True)
+        x = x - M # subtract maximum value for stability
+        exp_x = torch.exp(x/beta)
+        exp_x_sum = exp_x.sum(dim=d, keepdim=True)
+        return exp_x / exp_x_sum
+
     
-    corr = softmax_with_temperature(corr, beta=beta, d=1)
-    corr = corr.view(-1,h,w,h,w) # (target hxw) x (source hxw)
+class ASYMLoss(nn.Module):
+    r"""ASYM, 'Demistfying Unsupervised Semantic Correspondence Estimation' paper"""
+    def __init__(self, temp=[10, 5], loss_type='ce') -> None:
+        super(ASYMLoss, self).__init__()
+        self.t1 = temp[0]
+        self.t2 = temp[1]
+        self.loss_type = loss_type
 
-    grid_x = corr.sum(dim=1, keepdim=False) # marginalize to x-coord.
-    x_normal = x_normal.expand(b,w)
-    x_normal = x_normal.view(b,w,1,1)
-    grid_x = (grid_x*x_normal).sum(dim=1, keepdim=True) # b x 1 x h x w
-    
-    grid_y = corr.sum(dim=2, keepdim=False) # marginalize to y-coord.
-    y_normal = y_normal.expand(b,h)
-    y_normal = y_normal.view(b,h,1,1)
-    grid_y = (grid_y*y_normal).sum(dim=1, keepdim=True) # b x 1 x h x w
-    return grid_x, grid_y
+    def forward(self, src_f, trg_f, src_pf, trg_pf):
 
-def EPE(input_flow, target_flow, sparse=True, mean=True, sum=False):
+        src_f = F.normalize(src_f, p=2, dim=1) * self.t1
+        trg_f = F.normalize(trg_f, p=2, dim=1) * self.t1
+        
+        src_pf = F.normalize(src_pf, p=2, dim=1) * self.t2
+        trg_pf = F.normalize(trg_pf, p=2, dim=1) * self.t2
+        
+        B, C, H, W = src_f.shape
+        _, Cp, _, _ = src_pf.shape
+        
+        corr = torch.bmm(src_f.view(B,C,H*W).permute(0,2,1), trg_f.view(B,C,H*W)).view(B,H,W,H,W)
+        s_corr = F.softmax(corr.view(B,H,W,-1), dim=3).view(B,H,W,H,W)
 
-    EPE_map = torch.norm(target_flow-input_flow, 2, 1)
-    batch_size = EPE_map.size(0)
-    if sparse:
-        # invalid flow is defined with both flow coordinates to be exactly 0
-        mask = (target_flow[:,0] == 0) & (target_flow[:,1] == 0)
+        corr_p = torch.bmm(src_pf.view(B,Cp,H*W).permute(0,2,1), trg_pf.view(B,Cp,H*W)).view(B,H,W,H,W)
+        s_corr_p = F.softmax(corr_p.view(B,H,W,-1), dim=3).view(B,H,W,H,W)
 
-        EPE_map = EPE_map[~mask]
-    if mean:
-        return EPE_map.mean()
-    elif sum:
-        return EPE_map.sum()
-    else:
-        return EPE_map.sum()/torch.sum(~mask)
+        if self.loss_type == 'ce':
+            loss  = torch.sum((-1.*s_corr) * torch.log(s_corr_p+1e-8))/ (B*H*W)
+            return loss
+        else:
+            loss = torch.sum(torch.pow(s_corr - s_corr_p, 2)) 
+            return loss*100 / (H*W*B)
+        
+class LeadLoss(nn.Module):
+    r"""LEAD, ' Self-Supervised Landmark Estimation by Aligning Distributions of Feature Similarity' paper"""
+    def __init__(self, temp=[10], loss_type='ce') -> None:
+        super(ASYMLoss, self).__init__()
+        self.t1 = temp[0]
+        self.loss_type = loss_type
 
-def unnormalise_and_convert_mapping_to_flow(map):
-    # here map is normalised to -1;1
-    # we put it back to 0,W-1, then convert it to flow
-    B, C, H, W = map.size()
-    mapping = torch.zeros_like(map)
-    # mesh grid
-    mapping[:,0,:,:] = (map[:, 0, :, :].float().clone() + 1) * (W - 1) / 2.0 # unormalise
-    mapping[:,1,:,:] = (map[:, 1, :, :].float().clone() + 1) * (H - 1) / 2.0 # unormalise
+    def forward(self, src_f, trg_f, src_pf, trg_pf):
 
-    xx = torch.arange(0, W).view(1,-1).repeat(H,1)
-    yy = torch.arange(0, H).view(-1,1).repeat(1,W)
-    xx = xx.view(1,1,H,W).repeat(B,1,1,1)
-    yy = yy.view(1,1,H,W).repeat(B,1,1,1)
-    grid = torch.cat((xx,yy),1).float()
+        #LEAD loss, Karmali et.al 2022
+        src_f = F.normalize(src_f, p=2, dim=1)
+        trg_f = F.normalize(trg_f, p=2, dim=1)
+        
+        src_pf = F.normalize(src_pf, p=2, dim=1)
+        trg_pf = F.normalize(trg_pf, p=2, dim=1)
+        
+        B, C, H, W = src_f.shape
+        _, Cp, _, _ = src_pf.shape
+        
+        corr = torch.bmm(src_f.view(B,C,H*W).permute(0,2,1), trg_f.view(B,C,H*W)).view(B,H,W,H,W)
+        s_corr = F.softmax(corr.view(B,H,W,-1)*self.t1, dim=3).view(B,H,W,H,W)
 
-    if mapping.is_cuda:
-        grid = grid.cuda()
-    flow = mapping - grid
-    return flow
+        corr_p = torch.bmm(src_pf.view(B,Cp,H*W).permute(0,2,1), trg_pf.view(B,Cp,H*W)).view(B,H,W,H,W)
+        s_corr_p = F.softmax(corr_p.view(B,H,W,-1)*self.t1, dim=3).view(B,H,W,H,W)
 
-def softmax_with_temperature(x, beta, d = 1):
-    r'''SFNet: Learning Object-aware Semantic Flow (Lee et al.)'''
-    M, _ = x.max(dim=d, keepdim=True)
-    x = x - M # subtract maximum value for stability
-    exp_x = torch.exp(x/beta)
-    exp_x_sum = exp_x.sum(dim=d, keepdim=True)
-    return exp_x / exp_x_sum
-
-    
-
+        if self.loss_type == 'ce':
+            loss  = torch.sum((-1.*s_corr) * torch.log(s_corr_p+1e-8))/ (B*H*W)
+            return loss
+        else:
+            loss = torch.sum(torch.pow(s_corr - s_corr_p, 2)) / (B*H*W)
+            return loss * 100

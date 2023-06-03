@@ -18,10 +18,13 @@ backbone_path = './backbone/dino_resnet50.pth'
 layers = [i for i in range(8, 17)]
 freeze_backbone = True
 
+
+
 # Custom module
 init_type = 'xavier_norm'
 w_group = 1
 use_mp = False # matrix_product
+
 embed_dim = 128
 use_feat_project = False
 
@@ -49,6 +52,9 @@ weak_lambda = '[1.0, 0.0]'
 temp = 0.05 
 collect_grad = False
 use_negative = True 
+
+
+
 
 
 
