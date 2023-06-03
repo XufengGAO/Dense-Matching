@@ -4,7 +4,7 @@
 data = dict(
     datapath='./datasets',
     alpha=0.1,
-    batch_size=32,
+    batch_size=4,
     train=dict(
         type='trn',
         benchmark='pfpascal',
@@ -50,7 +50,7 @@ model = dict(
     
     use_neck = False,
     neck=dict(
-        D=1,
+        D=16,
         use_mp=False,
         init_type=init_type,
         use_relu=True
