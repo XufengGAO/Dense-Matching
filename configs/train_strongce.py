@@ -9,6 +9,15 @@ optimizer = dict(
     weight_decay=1e-5,
     momentum=0.95
 )
+layers = [i for i in range(4, 17)]
+
+# Training
+start_epoch = 0
+total_epochs = 50
+scheduler = dict(
+    type='none',
+)
+logpath = ''
 
 # Datasets
 data = dict(
@@ -44,7 +53,7 @@ data = dict(
 # r50 = [0] + [3, 4, 6, 3] = 17
 # r101 = [0] + [3, 4, 23, 3] = 34
 # layers = [3, 7, 13, 16]
-layers = [i for i in range(4, 17)]
+
 init_type = 'xavier_norm'
 
 model = dict(
@@ -73,7 +82,7 @@ model = dict(
         init_type=init_type,
     ),
 
-    resume = False,
+    resume = '',
     eval_mode = False,
 )
 
@@ -90,19 +99,48 @@ loss = dict(
     match_layers=[i for i in range(8, 17)],
 )
 
-
-
-# Training
-total_epochs = 50
-start_epoch = 0
-scheduler = 'none'
-
 # Misc
-use_wandb = True
-logpath = ''
-resume = ''
-run_id = ''
-wandb_proj_name = 'Multiple-W-Group'
+wandb = dict(
+    use=True,
+    run_name = "%.e_D%d_m%.2f_bsz_%d_Wd%.e_[%d,%d]" % \
+      (optimizer['lr'], w_group, optimizer['momentum'], batch_size, \
+       optimizer['weight_decay'], layers[0], layers[-1]),
+    run_id = '',
+    proj_name = 'Multiple-W-Group',
+    config = {
+        'optimizer':optimizer['type'],
+        'lr':optimizer['lr'],
+        'lr_bone':optimizer['lr_backbone'],
+        'Wd':optimizer['weight_decay'],
+        'momentum':optimizer['momentum'],
+        'bsz':batch_size,
+        'D':w_group,
+        'layers':"[%d,%d]"%(layers[0],layers[1]),
+        'pretrain':model['backbone']['pretrain'],
+        'backbone':'%s%d'%(model['backbone']['type'],model['backbone']['depth']),
+        'init':init_type,
+        'scheduler':scheduler['type'],
+        'alpha':data['alpha'],
+        'img_size':data['train']['output_image_size'],
+    }
+)
+
+
+
+    # Training parameters
+    # parser.add_argument('--gpu', type=str, default='0', help='GPU id')
+    # parser.add_argument("--scheduler", type=str, default="none", choices=['none', 'step', 'cycle', 'cosine'])
+    # parser.add_argument('--step_size', type=int, default=16, help='hyperparameters for step scheduler')
+    # parser.add_argument('--step_gamma', type=float, default=0.1, help='hyperparameters for step scheduler')
+
+
+    # SCOT algorithm parameters
+    # parser.add_argument('--sim', type=str, default='OTGeo', help='Similarity type: OT, OTGeo, cos, cosGeo')
+    # parser.add_argument('--exp1', type=float, default=1.0, help='exponential factor on initial cosine cost')
+    # parser.add_argument('--exp2', type=float, default=1.0, help='exponential factor on final OT scores')
+    # parser.add_argument('--epsilon', type=float, default=0.05, help='epsilon for Sinkhorn Regularization')
+
+    # default is the value that the attribute gets when the argument is absent. const is the value it gets when given.
 
 
 
