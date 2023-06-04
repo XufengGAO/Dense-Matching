@@ -1,7 +1,7 @@
 # Configuration file
 
 batch_size = 4
-w_group = 16
+w_group = 1
 optimizer = dict(
     type='sgd',
     lr=1e-4,
