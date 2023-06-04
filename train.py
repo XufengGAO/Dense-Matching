@@ -192,7 +192,7 @@ def build_wandb(wandb_dict, rank):
 
 def main(cfg):
     # 1. Init Logger
-    cfg.wandb.config['log'] = Logger.initialize()
+    cfg.wandb.config['log'] = Logger.initialize(cfg)
 
     rank = dist.get_rank()
     local_rank = cfg.local_rank

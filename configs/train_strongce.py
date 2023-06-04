@@ -10,6 +10,7 @@ optimizer = dict(
     momentum=0.95
 )
 layers = [i for i in range(4, 17)]
+use_wandb = True
 
 # Training
 start_epoch = 0
@@ -101,8 +102,8 @@ loss = dict(
 
 # Misc
 wandb = dict(
-    use=True,
-    run_name = "%.e_D%d_m%.2f_bsz_%d_Wd%.e_[%d,%d]" % \
+    use=use_wandb,
+    run_name = "%.e_D%d_m%.2f_bsz%d_Wd%.e_[%d,%d]" % \
       (optimizer['lr'], w_group, optimizer['momentum'], batch_size, \
        optimizer['weight_decay'], layers[0], layers[-1]),
     run_id = '',
