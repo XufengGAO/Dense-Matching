@@ -92,7 +92,6 @@ def build_optimizer(optimizer, model):
     Build optimizer, e.g., sgd, adamw.
     """
     assert optimizer.type in ["sgd", "adamw"], "Unknown optimizer type"
-    optimizer = None
 
     # take parameters
     parameter_group_names = {"params": []}

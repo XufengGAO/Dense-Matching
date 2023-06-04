@@ -23,7 +23,7 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
     # Logger.info(f'Current learning rate for different parameter groups: {[it["lr"] for it in optimizer.param_groups]}')
 
     # 1. Meters
-    progress, meters = utils.get_Meters(args.loss.type, args.collect_grad, len(dataloader), epoch)
+    progress, meters = utils.get_Meters(args.loss.type, args.loss.collect_grad, len(dataloader), epoch)
     
     # 2. Model status
     model.module.backbone.eval()
@@ -99,7 +99,8 @@ def train(args, model, criterion, dataloader, optimizer, epoch):
 def validate(args, model, criterion, dataloader, epoch, aux_val_loader=None):
     def run_validate(loader, base_progress=0):
         with torch.no_grad():
-            for _, data in enumerate(loader):
+            databar = tqdm(enumerate(loader), total=len(loader))
+            for _, data in databar:
                 # 1. Get inputs
                 bsz = data["src_img"].size(0)
                 imgs, masks, num_negatives = utils.get_input(data, use_negative=False)
@@ -239,7 +240,7 @@ def main(args):
                 param.requires_grad = False
 
     # 4. Optimizer, Scheduler, and Loss
-    optimizer = build_optimizer(args, model)
+    optimizer = build_optimizer(args.optimizer, model)
     # To give scheduler
     #lr_scheduler = build_scheduler(args, optimizer, len(train_loader), config=None)
     lr_scheduler = None
@@ -258,7 +259,7 @@ def main(args):
     Logger.info(f">>>>>>>>>> Number of training params: {n_parameters}")
 
     # resume the model
-    if args.model.resume or args.model.pretrain in ["dino", "denseCL"]:
+    if args.model.resume or args.model.backbone.pretrain in ["dino", "denseCL"]:
         model_without_ddp = model.module
         max_pck, start_epoch = build_checkpoint(args.model, model_without_ddp, optimizer, lr_scheduler)
         if start_epoch > 0:

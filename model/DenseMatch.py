@@ -104,9 +104,10 @@ class Model(nn.Module):
 
         # 5. loss
         self.match_layers = []
-        if loss.type == 'weak' and loss.match_loss_weight>0.0:
-            for i in loss.match_layers:
-                self.match_layers.append(self.layers.index(i))
+        if loss.type == 'weak':
+            if loss.match_loss_weight>0.0:
+                for i in loss.match_layers:
+                    self.match_layers.append(self.layers.index(i))
 
 
     def init_projector(self, layer):
@@ -197,7 +198,7 @@ class Model(nn.Module):
 
         # cross_sim = self.relu(torch.bmm(src_feats, trg_feats.transpose(1, 2))) # s->t, [B, HW, HW]
         # s->t, [B, D, HW0, HW1]
-        sim = self.relu(torch.einsum('bdlc,bdcL->bdlL', src_feats, trg_feats.transpose(2,3)))
+        sim = F.relu(torch.einsum('bdlc,bdcL->bdlL', src_feats, trg_feats.transpose(2,3)), inplace=True)
           
 
         del src_feats, trg_feats
@@ -369,10 +370,6 @@ class Model(nn.Module):
             mask_map = F.interpolate(mask_map.unsqueeze(0).double(), (sz[0],sz[1]), None, 'bilinear', True)[0,0] # HxW
     
         return mask_map
-    
-
-    def state_dict(self):
-        return self.learner.state_dict()
     
     def load_backbone(self, state_dict, strict=False):
         self.backbone.load_state_dict(state_dict, strict=strict)

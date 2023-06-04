@@ -1,10 +1,20 @@
 # Configuration file
 
+batch_size = 4
+w_group = 16
+optimizer = dict(
+    type='sgd',
+    lr=1e-4,
+    lr_backbone=0.0,
+    weight_decay=1e-5,
+    momentum=0.95
+)
+
 # Datasets
 data = dict(
     datapath='./datasets',
     alpha=0.1,
-    batch_size=4,
+    batch_size=batch_size,
     train=dict(
         type='trn',
         benchmark='pfpascal',
@@ -43,17 +53,17 @@ model = dict(
         depth=50,
         pretrain='imagenet',
         backbone_path='./backbone/dino_resnet50.pth',
-        layers=[i for i in range(8, 17)],
+        layers=layers,
         freeze=True,
         cam=''
     ),
     
-    use_neck = False,
+    use_neck = True,
     neck=dict(
-        D=16,
+        D=w_group,
         use_mp=False,
         init_type=init_type,
-        use_relu=True
+        use_relu=False
     ),
 
     use_head = False,
@@ -80,16 +90,10 @@ loss = dict(
     match_layers=[i for i in range(8, 17)],
 )
 
-optimizer = dict(
-    type='sgd',
-    lr=0.001,
-    lr_backbone=0.0,
-    weight_decay=1e-5,
-    momentum=0.9
-)
+
 
 # Training
-total_epochs = 20
+total_epochs = 50
 start_epoch = 0
 scheduler = 'none'
 
