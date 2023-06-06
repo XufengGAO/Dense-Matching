@@ -42,7 +42,7 @@ def mutual_nn_filter(correlation_matrix):
 
     return correlation_matrix * (corr_src * corr_trg)
 
-def predict_kps(box, confidence_ts, src_kps, n_pts):
+def predict_kps(box, src_kps, n_pts, confidence_ts):
     r"""Transfer keypoints by nearest-neighbour assignment"""
 
     # """Mutual nearest neighbor filtering (Rocco et al. NeurIPS'18)"""

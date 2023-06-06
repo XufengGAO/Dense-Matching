@@ -83,8 +83,9 @@ class Model(nn.Module):
                     torch.nn.Conv2d(model.neck.D, 1, (1,1)),
                     nn.ReLU(inplace=True),
                 )
+                self.corr_projector = None
                 self.init_type = model.neck.init_type
-                self.corr_projector.apply(self.init_projector)
+                #self.corr_projector.apply(self.init_projector)
             else:
                 self.corr_projector = None
         else:
@@ -184,6 +185,8 @@ class Model(nn.Module):
         #FIXME, if use projector, projects to [B, 1, HW0, HW1]
         if self.corr_projector is not None:
             sim = self.corr_projector(sim)
+            # sim.mean(dim=1)
+            sim = F.relu(torch.mean(sim, dim=1, keepdim=True))
         
         assert sim.size()[1] == 1, 'Fault dim'
         sim = sim.squeeze(1) # [B, HW0, HW1]
@@ -220,14 +223,15 @@ class Model(nn.Module):
         """
 
         feats = []
-
+        
         # Layer 0
         feat = self.backbone.conv1.forward(img)
         feat = self.backbone.bn1.forward(feat)
         feat = self.backbone.relu.forward(feat)
         feat = self.backbone.maxpool.forward(feat)
         if 0 in self.layers and return_feats:
-            feats.append(feat)
+            feats.append(feat) # H, W//4
+
 
         # Layer 1-4
         for hid, (bid, lid) in enumerate(zip(self.bottleneck_ids, self.layer_ids)):
@@ -246,9 +250,9 @@ class Model(nn.Module):
 
             if hid + 1 in self.layers and return_feats:
                 feats.append(feat.clone())
+                
 
             feat = self.backbone.__getattr__('layer%d' % lid)[bid].relu.forward(feat)
-
         # only return feats
         if return_feats and not return_fc:
             return feats, None, None

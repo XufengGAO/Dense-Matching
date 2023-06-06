@@ -106,7 +106,7 @@ def validate(cfg, model, criterion, dataloader, epoch, aux_val_loader=None):
             for _, data in databar:
                 # 1. Get inputs
                 bsz = data["src_img"].size(0)
-                imgs, masks, num_negatives = utils.get_input(data, use_negative=False)
+                imgs, num_negatives = utils.get_input(data, use_negative=False)
                 data["src_kps"] = data["src_kps"].cuda(non_blocking=True)
                 data["n_pts"] = data["n_pts"].cuda(non_blocking=True)
                 data["trg_kps"] = data["trg_kps"].cuda(non_blocking=True)
@@ -130,7 +130,7 @@ def validate(cfg, model, criterion, dataloader, epoch, aux_val_loader=None):
                 loss_meter.update(loss.item(), bsz)
 
                 # 4. Calculate PCK
-                opt_corr = PostProcessModule.optmatch(1-corr, src_m, trg_m, cfg.opm.epsilon, cfg.opm.exp2)
+                corr = PostProcessModule.optmatch(1-corr, src_m, trg_m, cfg.opm.epsilon, cfg.opm.exp2)
                 geometric_scores = torch.stack([PostProcessModule.rhm(c.clone().detach()) for c in corr], dim=0)
                 corr *= geometric_scores
 

@@ -119,8 +119,8 @@ class PFPascalDataset(CorrespondenceDataset):
         r""" Returns object bounding-box """
         bbox = bbox_list[idx].clone()
         if self.img_size is not None:
-            bbox[0::2] *= (self.img_size / imsize[0]) # w
-            bbox[1::2] *= (self.img_size / imsize[1]) # H
+            bbox[0::2] *= (self.img_size[1] / imsize[0]) # w
+            bbox[1::2] *= (self.img_size[0] / imsize[1]) # H
         return bbox
 
 def read_mat(path, obj_name):

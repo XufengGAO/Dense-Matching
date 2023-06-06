@@ -1,16 +1,17 @@
 # Configuration file
 
-batch_size = 16
+batch_size = 32
 w_group = 4
 optimizer = dict(
     type='sgd',
-    lr=1e-2,
+    lr=1e-5,
     lr_backbone=0.0,
-    weight_decay=1e-3,
+    weight_decay=1e-4,
     momentum=0.95
 )
 layers = [i for i in range(8, 17)]
 use_wandb = True
+img_size = (200, 300)
 
 # Training
 start_epoch = 0
@@ -26,10 +27,9 @@ data = dict(
     alpha=0.1,
     batch_size=batch_size,
     train=dict(
-        type='trn',
+        split='trn',
         benchmark='pfpascal',
-        output_image_size = (240, 240),
-        cam = '',
+        img_size = img_size,
         thres = 'auto',
         sampler=dict(
             shuffle=True,
@@ -37,10 +37,9 @@ data = dict(
         )
     ),
     val=dict(
-        type='val',
+        split='val',
         benchmark='pfpascal',
-        output_image_size = (240, 240),
-        cam = '',
+        img_size = img_size,
         thres = 'auto',
         sampler=dict(
             shuffle=False,
@@ -61,7 +60,7 @@ model = dict(
     backbone=dict(
         type='resnet',
         depth=50,
-        pretrain='dino',
+        pretrain='imagenet',
         backbone_path='./backbone/dino_resnet50.pth',
         layers=layers,
         freeze=True,
@@ -73,7 +72,8 @@ model = dict(
         D=w_group,
         use_mp=False,
         init_type=init_type,
-        use_relu=True
+        use_relu=False,
+        use_bias=False
     ),
 
     use_head = False,
@@ -122,11 +122,11 @@ wandb = dict(
         'init':init_type,
         'scheduler':scheduler['type'],
         'alpha':data['alpha'],
-        'img_size':data['train']['output_image_size'],
+        'img_size':img_size,
         'loss':loss['type'],
         'temp':loss['temp'],
-        'use_negative':loss['use_negative']
-        
+        'use_negative':loss['use_negative'],
+        'use_bias':model['neck']['use_bias']
     }
 )
 

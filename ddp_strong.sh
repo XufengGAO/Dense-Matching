@@ -3,7 +3,7 @@
 
 benchmark="pfpascal"
 backbone="resnet50"
-nnodes=1
+nnodes=2
 master_addr="10.233.80.247" #1
 # master_addr="10.233.90.176" #2
 # master_addr="10.233.70.135" #3

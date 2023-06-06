@@ -53,7 +53,7 @@ def build_dataloader(data, datapath, batch_size, rank, world_size):
     num_workers = 16 if torch.cuda.is_available() else 8
     pin_memory = True if torch.cuda.is_available() else False
 
-    Logger.info("Loading %s %s dataset" % (data.benchmark, data.type))
+    Logger.info("Loading %s %s dataset" % (data.benchmark, data.split))
 
     dataset = load_dataset(
         data.benchmark,
@@ -70,7 +70,7 @@ def build_dataloader(data, datapath, batch_size, rank, world_size):
         num_workers=num_workers, pin_memory=pin_memory, sampler=data_sampler)
 
     Logger.info(
-        f"Data loaded: there are {len(dataloader.dataset)} {data.type} images"
+        f"Data loaded: there are {len(dataloader.dataset)} {data.split} images"
     )
 
     # sub-validation set

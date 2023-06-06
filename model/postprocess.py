@@ -32,15 +32,16 @@ class PostProcess:
         return torch.index_select(hspace, dim=0, index=self.bin_ids.view(-1)).view_as(corr)
     
     def return_weight(self, mask):
-
+        # print(mask.size()) # [32, 200, 300])
+        
         hselect = mask[:, self.rf_center[:,1].long(),self.rf_center[:,0].long()]
-        weights = 0.5*torch.ones(hselect.size())
+        weights = 0.5*torch.ones(hselect.size()).cuda()
         scale = 1.0
         weights[hselect>0.4*scale] = 0.8
         weights[hselect>0.5*scale] = 0.9
         weights[hselect>0.6*scale] = 1.0
 
-        return weights/weights.sum(dim=1).unsqueeze(-1)
+        return weights/weights.sum(dim=1).unsqueeze(-1) # B, num_feat
         
     def optmatch(self, costs, src_masks, trg_masks, epsilon, exp2):
         
@@ -50,8 +51,7 @@ class PostProcess:
         ## ---- <Run Optimal Transport Algorithm> ----
         cnt = 0
         votes = []
-        print(cost.size(), mus.size(), nus.size())
-        x
+
         for cost, mu, nu in zip(costs, mus, nus):
             while True: # see Algorithm 1
                 # PI is optimal transport plan or transport matrix.
@@ -68,13 +68,11 @@ class PostProcess:
 
             #exp2 = 1.0 for spair-71k, TSS
             #exp2 = 0.5 # for pf-pascal and pfwillow
-            PI = torch.pow(self.relu(self.num_feat*PI), exp2)
-
+            PI = torch.pow(torch.clamp(self.num_feat*PI, min=0), exp2)
+            
             votes.append(PI.unsqueeze(0))
 
-        votes = torch.cat(votes, dim=0)
-
-        return votes
+        return torch.cat(votes, dim=0)
 
     def compute_bin_id(self, src_imsize, src_box, trg_box, hs_cellsize, nbins_x):
         r"""Computes Hough space bin ids for voting"""
@@ -108,7 +106,8 @@ def perform_sinkhorn(C,epsilon,mu,nu,a=[],warm=False,niter=1,tol=10e-9):
     """Main Sinkhorn Algorithm"""
     if not warm:
         a = torch.ones((C.shape[0],1)).cuda() / C.shape[0]
-
+    
+    
     K = torch.exp(-C/epsilon)
     # print(K.size(), nu.size(), a.size())
 

@@ -90,7 +90,7 @@ class Evaluator:
 
         return nearest_idxs
 
-def find_knn(self, db_vectors, qr_vectors):
+def find_knn(db_vectors, qr_vectors):
     r"""Finds K-nearest neighbors (Euclidean distance)"""
     # print("knn", db_vectors.unsqueeze(1).size(), qr_vectors.size())
     # print("knn", db_vectors[-3])

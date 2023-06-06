@@ -139,8 +139,8 @@ class CorrespondenceDataset(Dataset):
         xy, n_pts = pts_list[idx].size()
         if self.img_size is not None:
             pad_pts = torch.zeros((xy, self.max_pts - n_pts)) - 2
-            x_crds = pts_list[idx][0] * (self.img_size / org_imsize[0])
-            y_crds = pts_list[idx][1] * (self.img_size / org_imsize[1])
+            x_crds = pts_list[idx][0] * (self.img_size[1] / org_imsize[0])
+            y_crds = pts_list[idx][1] * (self.img_size[0] / org_imsize[1])
             kps = torch.cat([torch.stack([x_crds, y_crds]), pad_pts], dim=1)
         else:
             # only for test case, we use original size here
