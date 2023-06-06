@@ -2,7 +2,7 @@
 import torch
 from . import utils
 from model import geometry
-
+from model.chm_predict import CHM_Predict
 class Evaluator:
     r"""Computes evaluation metrics of PCK, LT-ACC, IoU"""
 
@@ -18,14 +18,17 @@ class Evaluator:
         self.rf_center = geometry.center(self.rf)
 
     def evaluate(self, src_kps, trg_kps, n_pts, corr, pckthres, pck_only):
+
+        prd_kps = geometry.predict_kps(self.rf, src_kps, n_pts, corr)
+        #FIXME
+        # prd_kps = CHM_Predict.transfer_kps(corr, src_kps, n_pts)
+
         if not pck_only:
-            src_kpidx = match_idx(src_kps, n_pts, self.rf_center)
-            trg_kpidx = match_idx(trg_kps, n_pts, self.rf_center)
+            src_kpidx = self.match_idx(src_kps, n_pts)
+            trg_kpidx = self.match_idx(trg_kps, n_pts)
             easy_match = {'src': [], 'trg': [], 'dist': []}
             hard_match = {'src': [], 'trg': []}
         
-        prd_kps = geometry.predict_kps(self.rf, src_kps, n_pts, corr)
-
         pck = []
         #FIXME: add pck_ids later to draw matches
         pck_ids = None
@@ -76,8 +79,18 @@ class Evaluator:
         return correct_dist, correct_ids, incorrect_ids, int(torch.sum(correct_pts))
     
 
+    def match_idx(self, kpss, n_ptss):
+        r"""Samples the nearst feature (receptive field) indices"""
+        max_pts = 40
+        batch = len(kpss)
+        nearest_idxs = torch.zeros((batch, max_pts), dtype=torch.int32).to(self.rf_center.device)
+        for idx, (kps, n_pts) in enumerate(zip(kpss, n_ptss)):
+            nearest_idx = find_knn(self.rf_center, kps[:,:n_pts].t())
+            nearest_idxs[idx, :n_pts] = nearest_idx
 
-def find_knn(db_vectors, qr_vectors):
+        return nearest_idxs
+
+def find_knn(self, db_vectors, qr_vectors):
     r"""Finds K-nearest neighbors (Euclidean distance)"""
     # print("knn", db_vectors.unsqueeze(1).size(), qr_vectors.size())
     # print("knn", db_vectors[-3])
@@ -92,14 +105,3 @@ def find_knn(db_vectors, qr_vectors):
     _, nearest_idx = dist.min(dim=1) #  hyperpixel idx for each keypoint
     # print("nea_idx", nearest_idx.size())
     return nearest_idx
-
-def match_idx(kpss, n_ptss, rf_center):
-    r"""Samples the nearst feature (receptive field) indices"""
-    max_pts = 40
-    batch = len(kpss)
-    nearest_idxs = torch.zeros((batch, max_pts), dtype=torch.int32).to(rf_center.device)
-    for idx, (kps, n_pts) in enumerate(zip(kpss, n_ptss)):
-        nearest_idx = find_knn(rf_center, kps[:,:n_pts].t())
-        nearest_idxs[idx, :n_pts] = nearest_idx
-
-    return nearest_idxs

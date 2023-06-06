@@ -12,6 +12,8 @@ class PostProcess:
 
         self.rf = geometry.receptive_fields(rfsz, jsz, feat_h, feat_w).to(device)
         self.rf_center = geometry.center(self.rf)
+
+        self.num_feat = feat_h * feat_w
         
         self.nbins_x, self.nbins_y, hs_cellsize = self.build_hspace(img_side, img_side, ncells)
         self.bin_ids = self.compute_bin_id(img_side, self.rf, self.rf, hs_cellsize, self.nbins_x)
@@ -29,8 +31,50 @@ class PostProcess:
 
         return torch.index_select(hspace, dim=0, index=self.bin_ids.view(-1)).view_as(corr)
     
-    def optmatch(self, corr):
-        pass
+    def return_weight(self, mask):
+
+        hselect = mask[:, self.rf_center[:,1].long(),self.rf_center[:,0].long()]
+        weights = 0.5*torch.ones(hselect.size())
+        scale = 1.0
+        weights[hselect>0.4*scale] = 0.8
+        weights[hselect>0.5*scale] = 0.9
+        weights[hselect>0.6*scale] = 1.0
+
+        return weights/weights.sum(dim=1).unsqueeze(-1)
+        
+    def optmatch(self, costs, src_masks, trg_masks, epsilon, exp2):
+        
+        mus = self.return_weight(src_masks) # normalize weight
+        nus = self.return_weight(trg_masks)
+
+        ## ---- <Run Optimal Transport Algorithm> ----
+        cnt = 0
+        votes = []
+        print(cost.size(), mus.size(), nus.size())
+        x
+        for cost, mu, nu in zip(costs, mus, nus):
+            while True: # see Algorithm 1
+                # PI is optimal transport plan or transport matrix.
+                PI = perform_sinkhorn(cost, epsilon, mu.unsqueeze(-1), nu.unsqueeze(-1)) # 4x4096x4096
+                
+                if not torch.isnan(PI).any():
+                    if cnt>0:
+                        print(cnt)
+                    break
+                else: # Nan encountered caused by overflow issue is sinkhorn
+                    epsilon *= 2.0
+                    #print(epsilon)
+                    cnt += 1
+
+            #exp2 = 1.0 for spair-71k, TSS
+            #exp2 = 0.5 # for pf-pascal and pfwillow
+            PI = torch.pow(self.relu(self.num_feat*PI), exp2)
+
+            votes.append(PI.unsqueeze(0))
+
+        votes = torch.cat(votes, dim=0)
+
+        return votes
 
     def compute_bin_id(self, src_imsize, src_box, trg_box, hs_cellsize, nbins_x):
         r"""Computes Hough space bin ids for voting"""
@@ -60,7 +104,34 @@ class PostProcess:
 
 
 
+def perform_sinkhorn(C,epsilon,mu,nu,a=[],warm=False,niter=1,tol=10e-9):
+    """Main Sinkhorn Algorithm"""
+    if not warm:
+        a = torch.ones((C.shape[0],1)).cuda() / C.shape[0]
 
+    K = torch.exp(-C/epsilon)
+    # print(K.size(), nu.size(), a.size())
+
+    Err = torch.zeros((niter,2)).cuda()
+    for i in range(niter):
+        b = nu/torch.mm(K.t(), a)
+
+        if i%2==0:
+            Err[i,0] = torch.norm(a*(torch.mm(K, b)) - mu, p=1)
+            if i>0 and (Err[i,0]) < tol:
+                break
+
+        a = mu / torch.mm(K, b)
+
+        if i%2==0:
+            Err[i,1] = torch.norm(b*(torch.mm(K.t(), a)) - nu, p=1)
+            if i>0 and (Err[i,1]) < tol:
+                break
+
+        PI = torch.mm(torch.mm(torch.diag(a[:,-1]),K), torch.diag(b[:,-1]))
+
+    del a; del b; del K
+    return PI
 
 
 

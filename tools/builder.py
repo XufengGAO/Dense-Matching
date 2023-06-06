@@ -59,10 +59,8 @@ def build_dataloader(data, datapath, batch_size, rank, world_size):
         data.benchmark,
         datapath,
         data.thres,
-        data.type,
-        data.cam,
-        output_image_size=data.output_image_size,
-        use_resize=True,
+        data.split,
+        img_size=data.img_size,
     )
     data_sampler = DistributedSampler(
         dataset, num_replicas=world_size, rank=rank, shuffle=data.sampler.shuffle, drop_last=data.sampler.drop_last
@@ -77,7 +75,7 @@ def build_dataloader(data, datapath, batch_size, rank, world_size):
 
     # sub-validation set
     aux_loader = None
-    if data.type == 'val':
+    if data.split == 'val':
         if len(dataloader.sampler) * world_size < len(dataloader.dataset):
             aux_dataset = Subset(dataloader.dataset, range(len(dataloader.sampler)*world_size, len(dataloader.dataset)))
             aux_loader = DataLoader(aux_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)

@@ -336,6 +336,7 @@ def reduce_tensor(tensor):
     return rt
 
 def get_input(data, use_negative):
+    
     if use_negative:
         shifted_idx = np.roll(np.arange(data['src_img'].size(0)), -1)
         trg_img_neg = data['trg_img'][shifted_idx].clone()
@@ -346,15 +347,6 @@ def get_input(data, use_negative):
         trg_img = torch.cat([data['trg_img'], trg_img_neg[neg_subidx]], dim=0)
 
         del trg_img_neg
-
-        if 'src_mask' in data.keys():
-            trg_mask_neg = data['trg_mask'][shifted_idx].clone()
-            src_mask = torch.cat([data['src_mask'], data['src_mask'][neg_subidx]], dim=0)
-            trg_mask = torch.cat([data['trg_mask'], trg_mask_neg[neg_subidx]], dim=0)
-
-            del trg_mask_neg
-        else:
-            src_mask, trg_mask = None, None
         
         num_negatives = neg_subidx.sum()
 
@@ -363,19 +355,10 @@ def get_input(data, use_negative):
         src_img = data['src_img']
         trg_img = data['trg_img']
 
-        if 'src_mask' in data.keys():
-            src_mask = data['src_mask']
-            trg_mask = data['trg_mask']
-        else:
-            src_mask, trg_mask = None, None
-
     imgs = torch.cat([src_img, trg_img], dim=0).cuda(non_blocking=True)
-    if src_mask and trg_mask:
-        masks = torch.cat([src_mask, trg_mask], dim=0).cuda(non_blocking=True)
-    else:
-        masks = None
 
-    return imgs, masks, num_negatives
+
+    return imgs, num_negatives
 
 def get_Meters(criterion, collect_grad, len_dataloader, epoch):
     meters = {}

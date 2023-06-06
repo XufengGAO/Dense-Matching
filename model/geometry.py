@@ -29,39 +29,6 @@ def receptive_fields(rfsz, jsz, height, width):
     del feat_ids
     return box
 
-def prune_margin(receptive_box, imsize, threshold=0):
-    r"""Remove receptive fields on the margin of the image"""
-    im_width = imsize[1]
-    im_height = imsize[0]
-
-    xmin = util.where(receptive_box[:, 0] >= 0 - threshold)
-    ymin = util.where(receptive_box[:, 1] >= 0 - threshold)
-    xmax = util.where(receptive_box[:, 2] < im_width + threshold)
-    ymax = util.where(receptive_box[:, 3] < im_height + threshold)
-
-    val1 = util.intersect1d(xmin, ymin)
-    val2 = util.intersect1d(xmax, ymax)
-    valid_ids = torch.sort(torch.unique(util.intersect1d(val1, val2)))[0]
-
-    pruned_receptive_box = receptive_box[valid_ids]
-
-    return pruned_receptive_box, valid_ids
-
-
-def prune_bbox(receptive_box, bbox, threshold=0):
-    r"""Remove receptive fields on the margin of the image"""
-    xmin = util.where(receptive_box[:, 0] >= bbox[0] - threshold)
-    ymin = util.where(receptive_box[:, 1] >= bbox[1] - threshold)
-    xmax = util.where(receptive_box[:, 2] < bbox[2] + threshold)
-    ymax = util.where(receptive_box[:, 3] < bbox[3] + threshold)
-
-    val1 = util.intersect1d(xmin, ymin)
-    val2 = util.intersect1d(xmax, ymax)
-    valid_ids = torch.sort(torch.unique(util.intersect1d(val1, val2)))[0]
-
-    pruned_receptive_box = receptive_box[valid_ids]
-
-    return pruned_receptive_box, valid_ids
 
 def mutual_nn_filter(correlation_matrix):
     r"""Mutual nearest neighbor filtering (Rocco et al. NeurIPS'18)"""
@@ -70,16 +37,16 @@ def mutual_nn_filter(correlation_matrix):
     corr_src_max[corr_src_max == 0] = corr_src_max[corr_src_max == 0] + 1e-30
     corr_trg_max[corr_trg_max == 0] = corr_trg_max[corr_trg_max == 0] + 1e-30
 
-    corr_src = correlation_matrix / (corr_src_max + 1e-30)
-    corr_trg = correlation_matrix / (corr_trg_max + 1e-30)
+    corr_src = correlation_matrix / corr_src_max
+    corr_trg = correlation_matrix / corr_trg_max
 
     return correlation_matrix * (corr_src * corr_trg)
 
-def predict_kps(box, src_kps, n_pts, confidence_ts):
+def predict_kps(box, confidence_ts, src_kps, n_pts):
     r"""Transfer keypoints by nearest-neighbour assignment"""
 
-    # TODO: """Mutual nearest neighbor filtering (Rocco et al. NeurIPS'18)"""
-    # confidence_ts = mutual_nn_filter(confidence_ts) # refined correleation matrix
+    # """Mutual nearest neighbor filtering (Rocco et al. NeurIPS'18)"""
+    confidence_ts = mutual_nn_filter(confidence_ts) # refined correleation matrix
 
     prd_kps = []
     max_pts = 40
@@ -89,6 +56,7 @@ def predict_kps(box, src_kps, n_pts, confidence_ts):
         # 1. Prepare geometries & argmax target indices
         kp = kpss.narrow_copy(1, 0, np) # cut the real kpss
         _, trg_argmax_idx = torch.max(ct, dim=1)
+
         geomet = box[:, :2].unsqueeze(0).repeat(len(kp.t()), 1, 1)
 
         # 2. Retrieve neighbouring source boxes that cover source key-points
@@ -101,6 +69,7 @@ def predict_kps(box, src_kps, n_pts, confidence_ts):
         # 4. Transfer the neighbours based on given confidence tensor
         vector_summator = torch.zeros_like(geomet)
         src_idx = src_nbr_onehot.nonzero()
+
         trg_idx = trg_argmax_idx.index_select(dim=0, index=src_idx[:, 1])
         vector_summator[src_idx[:, 0], src_idx[:, 1]] = geomet[src_idx[:, 0], trg_idx]
         vector_summator += src_displacements
@@ -110,6 +79,7 @@ def predict_kps(box, src_kps, n_pts, confidence_ts):
         pads = (-100*torch.ones((2, max_pts - np))).to(prd.device)
         prd = torch.cat([prd, pads], dim=1)
         prd_kps.append(prd)
+
         del geomet, src_nbr_onehot, n_neighbours, src_displacements, vector_summator, src_idx, trg_idx, pads, prd
 
     prd_kpss = torch.stack(prd_kps)
@@ -151,3 +121,16 @@ def gaussian2d(side=7):
     gaussian = gaussian / gaussian.sum()
 
     return gaussian
+
+
+def normalize_kps(cls, kps):
+    kps = kps.clone().detach()
+    kps[kps != -2] -= (cls.img_size // 2)
+    kps[kps != -2] /= (cls.img_size // 2)
+    return kps
+    
+# def chm_predict_kps(confidence_ts, src_kps, n_pts, normalized):
+
+#     if not normalized:
+#         src_kps = normalize_kps(src_kps)
+#     confidence_ts = cls.apply_gaussian_kernel(confidence_ts)

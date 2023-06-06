@@ -16,6 +16,7 @@ import re
 import torch.backends.cudnn as cudnn
 from torch import distributed as dist
 from tqdm import tqdm
+from model.chm_predict import CHM_Predict
 wandb.login()
 
 
@@ -38,25 +39,27 @@ def train(cfg, model, criterion, dataloader, optimizer, epoch):
 
         # 3. Get inputs
         bsz = data['src_img'].size(0)
-        imgs, masks, num_negatives = utils.get_input(data, cfg.loss.use_negative)
+        imgs, num_negatives = utils.get_input(data, cfg.loss.use_negative)
         data["src_kps"] = data["src_kps"].cuda(non_blocking=True)
         data["n_pts"] = data["n_pts"].cuda(non_blocking=True)
         data["trg_kps"] = data["trg_kps"].cuda(non_blocking=True)
         data["pckthres"] = data["pckthres"].cuda(non_blocking=True)       
 
         # 4. Compute output
-        src_feat, trg_feat, corr = model(imgs)
+        src_feat, trg_feat, corr = model(imgs, return_mask=False)
 
         with torch.no_grad():
             if evaluator.rf_center is None and evaluator.rf is None:
                 rfsz, jsz, feat_h, feat_w, img_side = model.module.get_geo_info()
                 evaluator.set_geo(rfsz, jsz, feat_h, feat_w)
+                #CHM_Predict.initialize(img_side[0], feat_h) # only for squre img
+
         # 5. Calculate loss
         if cfg.loss.type == "strong_ce":
             with torch.no_grad():
                 # return dict results                
-                eval_result = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
-                                                 corr.detach().clone(), data['pckthres'], pck_only=False)
+                eval_result = evaluator.evaluate(data["src_kps"].cuda(), data["trg_kps"].cuda(), data["n_pts"],\
+                                                 corr.detach().clone(), data['pckthres'].cuda(), pck_only=False)
             loss = criterion(
                 corr, eval_result['easy_match'], eval_result['hard_match'], data["pckthres"], data["n_pts"]
             )
@@ -110,7 +113,7 @@ def validate(cfg, model, criterion, dataloader, epoch, aux_val_loader=None):
                 data["pckthres"] = data["pckthres"].cuda(non_blocking=True)                
 
                 # 2. Compute output
-                src_feat, trg_feat, corr = model(imgs, bsz)
+                src_feat, trg_feat, corr, src_m, trg_m = model(imgs, return_mask=True)
 
                 # 3. Calculate loss
                 if cfg.loss.type == "strong_ce":
@@ -127,9 +130,8 @@ def validate(cfg, model, criterion, dataloader, epoch, aux_val_loader=None):
                 loss_meter.update(loss.item(), bsz)
 
                 # 4. Calculate PCK
-                ##TODO, optmatch should be added later, Post-processing
-                with torch.no_grad():
-                    geometric_scores = torch.stack([PostProcessModule.rhm(c.clone().detach()) for c in corr], dim=0)
+                opt_corr = PostProcessModule.optmatch(1-corr, src_m, trg_m, cfg.opm.epsilon, cfg.opm.exp2)
+                geometric_scores = torch.stack([PostProcessModule.rhm(c.clone().detach()) for c in corr], dim=0)
                 corr *= geometric_scores
 
                 pck = evaluator.evaluate(data["src_kps"], data["trg_kps"], data["n_pts"],\
@@ -263,10 +265,8 @@ def main(cfg):
         train_loader.sampler.set_epoch(epoch)
 
         # train
-        start_time = time.time()
         trn_loss = train(cfg, model, criterion, train_loader, optimizer, epoch)
         log_benchmark["trn_loss"] = trn_loss
-        end_train_time = (time.time()-start_time)/60
 
         # Create a PostProcessModule:
         if PostProcessModule is None:
@@ -274,13 +274,11 @@ def main(cfg):
             PostProcessModule = PostProcess(rfsz, jsz, feat_h, feat_w, device, img_side)
 
         # validation
-        start_time = time.time()
         val_loss, val_pck = validate(
             cfg, model, criterion, val_loader, epoch, aux_val_loader
         )
         log_benchmark["val_loss"] = val_loss
         log_benchmark["val_pck"] = val_pck
-        end_val_time = (time.time()-start_time)/60
 
         # save model and log results
         if val_pck > max_pck and rank == 0:
@@ -292,11 +290,7 @@ def main(cfg):
         if cfg.wandb.use and rank == 0:
             wandb.log({"epochs": epoch})
             wandb.log(log_benchmark)
-            
-        time_message = (
-            ">>>>> Train/Eval %d epochs took:%4.3f + %4.3f = %4.3f"%(epoch + 1, end_train_time, end_val_time, end_train_time+end_val_time)+" minutes\n"
-        )
-        Logger.info(time_message)
+
         # if epoch%2 == 0:
         #     torch.cuda.empty_cache()
 

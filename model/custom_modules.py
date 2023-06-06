@@ -10,6 +10,9 @@ class DynamicFeatureSelection(nn.Module):
         self.in_channels = in_channels
         self.C = sum(in_channels)
         self.w = nn.Parameter(torch.zeros((N, neck.D))) # N x D
+        self.use_bias = neck.use_bias
+        if self.use_bias:
+            self.bias = nn.Parameter(torch.zeros(1,neck.D,1,1,1)) #bdchw
         self.init_weights(neck.init_type)
 
         self.use_mp = neck.use_mp
@@ -49,7 +52,11 @@ class DynamicFeatureSelection(nn.Module):
             # for-loop, feat is a list
             result = []
             for i, f in enumerate(feat):
-                result.append(torch.einsum('d, bchw->bdchw', self.w.T[:,i], f))
+                if self.use_bias:
+                    result.append(torch.einsum('d, bchw->bdchw', self.w.T[:,i], f)+self.bias)
+                else:
+                    result.append(torch.einsum('d, bchw->bdchw', self.w.T[:,i], f))
+
             if self.use_relu:
                 return F.relu(torch.cat(result, dim=2), inplace=True)
             else:

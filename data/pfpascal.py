@@ -12,9 +12,9 @@ from PIL import Image
 
 class PFPascalDataset(CorrespondenceDataset):
     r"""Inherits CorrespondenceDataset"""
-    def __init__(self, benchmark, datapath, thres, split, cam, output_image_size=(256,256), use_resize=False):
+    def __init__(self, benchmark, datapath, thres, split, img_size):
         r"""PF-PASCAL dataset constructor"""
-        super(PFPascalDataset, self).__init__(benchmark, datapath, thres, split, output_image_size, use_resize)
+        super(PFPascalDataset, self).__init__(benchmark, datapath, thres, split, img_size)
 
         self.train_data = pd.read_csv(self.spt_path) # dataframe
         self.src_imnames = np.array(self.train_data.iloc[:, 0])
@@ -24,7 +24,6 @@ class PFPascalDataset(CorrespondenceDataset):
                     'diningtable', 'dog', 'horse', 'motorbike', 'person',
                     'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
         self.cls_ids = self.train_data.iloc[:, 2].values.astype('int') - 1
-        self.cam = cam  # point 1
 
         if split == 'trn': # trn.csv file inclues column 'flip'
             self.flip = self.train_data.iloc[:, 3].values.astype('int')
@@ -66,58 +65,23 @@ class PFPascalDataset(CorrespondenceDataset):
 
     def __getitem__(self, idx):
         r"""Construct and return a batch for PF-PASCAL dataset"""
-        sample = super(PFPascalDataset, self).__getitem__(idx)
+        batch = super(PFPascalDataset, self).__getitem__(idx)
 
         # Object bounding-box (list of tensors)
-        sample['src_bbox'] = self.src_bbox[idx]
-        sample['trg_bbox'] = self.trg_bbox[idx]
-
-        # print(sample['src_bbox'], sample['trg_bbox'])
+        batch['src_bbox'] = self.get_bbox(self.src_bbox, idx, batch['src_imsize'])
+        batch['trg_bbox'] = self.get_bbox(self.trg_bbox, idx, batch['trg_imsize'])
+        batch['pckthres'] = self.get_pckthres(batch) # rescaled pckthres
             
         # Horizontal flip of key-points when training (no training in HyperpixelFlow)
         if self.split == 'trn' and self.flip[idx]: # width - current x-axis
             # sample['src_kps'][0] = sample['src_img'].size()[2] - sample['src_kps'][0]
             # sample['trg_kps'][0] = sample['trg_img'].size()[2] - sample['trg_kps'][0]
-            self.horizontal_flip(sample)
-            sample['flip'] = 1
+            self.horizontal_flip(batch)
+            batch['flip'] = 1
         else:
-            sample['flip'] = 0
+            batch['flip'] = 0
 
-        if self.cam:
-            src_mask = self.get_mask(self.src_imnames, idx, sample['flip'])# only possible when cam exists
-            trg_mask = self.get_mask(self.trg_imnames, idx, sample['flip'])
-            if src_mask is not None and trg_mask is not None:
-                sample['src_mask'] = src_mask
-                sample['trg_mask'] = trg_mask
-
-        # resize all things
-        if self.use_resize:
-            sample['src_img'], sample['src_kps'], sample['src_intratio'] = self.resize(sample['src_img'].unsqueeze(0), sample['src_kps'])
-            sample['trg_img'], sample['trg_kps'], sample['trg_intratio'] = self.resize(sample['trg_img'].unsqueeze(0), sample['trg_kps'])
-            sample['src_bbox'][0::2] *= sample['src_intratio'][1]
-            sample['src_bbox'][1::2] *= sample['src_intratio'][0]
-            sample['trg_bbox'][0::2] *= sample['trg_intratio'][1]
-            sample['trg_bbox'][1::2] *= sample['trg_intratio'][0]
-        else:
-            sample['src_intratio'] = torch.tensor((1.0, 1.0)) # ratio, (H,W)
-            sample['trg_intratio'] = torch.tensor((1.0, 1.0))
-
-        sample['src_imsize'] = torch.tensor(sample['src_img'].size()) # rescaled size, CxHxW
-        sample['trg_imsize'] = torch.tensor(sample['trg_img'].size())
-
-        sample['pckthres'] = self.get_pckthres(sample) # rescaled pckthres
-
-
-        if self.use_batch:
-            sample['src_kps'] = self.pad_kps(sample['src_kps'], sample['n_pts'])
-            sample['trg_kps'] = self.pad_kps(sample['trg_kps'], sample['n_pts'])
-
-        return sample
-
-    def pad_kps(self, kps, n_pts):
-        r"""Compute PCK threshold"""
-        return super(PFPascalDataset, self).pad_kps(kps, n_pts)
-
+        return batch
     
     def horizontal_flip(self, sample):
         tmp = sample['src_bbox'][0].clone()
@@ -150,7 +114,14 @@ class PFPascalDataset(CorrespondenceDataset):
             mask = None
         
         return mask
-
+    
+    def get_bbox(self, bbox_list, idx, imsize):
+        r""" Returns object bounding-box """
+        bbox = bbox_list[idx].clone()
+        if self.img_size is not None:
+            bbox[0::2] *= (self.img_size / imsize[0]) # w
+            bbox[1::2] *= (self.img_size / imsize[1]) # H
+        return bbox
 
 def read_mat(path, obj_name):
     r"""Read specified objects from Matlab data file, (.mat)"""
